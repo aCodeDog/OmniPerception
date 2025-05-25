@@ -1,18 +1,21 @@
 # OmniPerception
 
-- [x] LidarSensor release.
+- [ ] LidarSensor release.
 - [ ] training code release.
 - [ ] deploy code release.
 
 ## NOTE
 
+This repository is still not fully built. This is due to my poor coding habits, and many places need to be reorganized ！！！
+
+
 According to isaacgym's test on GPU 4090, using 4096 lidar (20000 rays) environment, the rendering time of each step is about 250 ms.
 
 The current lidar supports livox mid360, avia, hap, horizon, mid40, mid70, tele, Velodyne HDL-64, Velodyne VLP-32, Ouster OS-128, etc. 
 
-Supports simulation env include: isaacgym, genesis, mujoco, isaac sim. However, due to time constraints, the current repo combination and instructions for use have not been fully prepared. 
+Supports simulation env include: isaacgym, genesis, mujoco, isaac sim. However, due to time constraints , the current repo instructions for use have not been fully prepared. 
 
-If you have any difficulties in use, you can raise an issue. In the next two months, the documentation and code structure will be gradually improved.
+If you have any difficulties in use, you can raise an issue. In the next two months, the documentation and code structure will be gradually completed.
 
 
 
