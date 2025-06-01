@@ -287,7 +287,7 @@ def downsample_spherical_points_vectorized(sphere_points, num_theta_bins=10, num
     downsampled[:, :, 2] = phi_centers_flat.unsqueeze(0)      # phi values
     
     return downsampled
-class Go2Env:
+class G1Env:
     def __init__(self, 
                  num_envs=1, 
                  num_obstacles=5,
@@ -304,6 +304,7 @@ class Go2Env:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         self.sensor_cfg = LidarConfig()
+        self.sensor_cfg.sensor_type ="mid360"
         self.sim_time = 0
         self.sensor_update_time = 0
         self.state_update_time = 0
@@ -658,8 +659,15 @@ class Go2Env:
         translation = trimesh.transformations.translation_matrix(transform)
         terrain_mesh.apply_transform(translation)
 
-
-        obstacle_mesh = trimesh.load("/home/zifanw/rl_robot/LidarSensor/LidarSensor/resources/robots/robot_combined.stl")
+        current_script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        
+        two_levels_up = os.path.dirname(os.path.dirname(current_script_dir))
+        
+        
+        obstacle_mesh_path = os.path.join(two_levels_up, "resources", "robots","g1_29", "robot_combined.stl")
+        
+        obstacle_mesh = trimesh.load(obstacle_mesh_path)
 
 
             #obstacle_mesh = trimesh.load(self.terrain_cfg.obstacle_config.obstacle_root_path+"/human/meshes/Male.OBJ")
@@ -675,7 +683,7 @@ class Go2Env:
 
         combine_mesh = trimesh.util.concatenate([terrain_mesh, obstacle_mesh])
         #save combined mesh
-        combine_mesh.export("/home/zifanw/rl_robot/LidarSensor/LidarSensor/resources/robots/robot_terrain_combined.stl")
+        #combine_mesh.export("robot_terrain_combined.stl")
         vertices = combine_mesh.vertices
         triangles = combine_mesh.faces
         vertex_tensor = torch.tensor( 
@@ -1289,7 +1297,9 @@ class Go2Env:
         self.lidar_tensor, self.sensor_dist_tensor = self.sensor.update()
         
         #points dowm sample
-        self.downsampled_cloud = self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3) #farthest_point_sampling(self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3), sample_size=5000)
+        #self.downsampled_cloud = self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3) #
+        
+        self.downsampled_cloud = farthest_point_sampling(self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3), sample_size=5000)
         self.sphere_points = cart2sphere(self.lidar_tensor.view(-1,3)).view(self.num_envs,-1,3)
         self.downsampled_sphere_points = downsample_spherical_points_vectorized(self.sphere_points, 10, 10)
         # Step the physics
@@ -1311,7 +1321,6 @@ class Go2Env:
             #self._draw_height_samples()
             self.sensor_update_time=0
             
-                        # 发布点云消息
             # if self.publish_ros:
             #     self.publish_point_cloud()
             #     # 处理ROS消息
@@ -1479,7 +1488,7 @@ def print_lidar_pos():
     
 if __name__ == "__main__":
     # Create and run a simple lidar environment
-    env = Go2Env(
+    env = G1Env(
         num_envs=1,
         num_obstacles=10
     )

@@ -69,9 +69,19 @@ def combine_urdf_meshes_to_stl(urdf_path, output_stl_path, package_dir_map=None)
                         # --- Mesh processing code starts here ---
                         mesh_path = mesh_info.filename
                         mesh_scale = mesh_info.scale if mesh_info.scale is not None else [1.0, 1.0, 1.0]
-                        root="/home/zifanw/rl_robot/LidarSensor/LidarSensor/resources/robots/g1_29"
-                        # Resolve the mesh path using the package map
-                        full_mesh_path = f"{root}/{mesh_path}"
+                        urdf_dir = os.path.dirname(os.path.abspath(urdf_path))
+                        
+                        # Resolve the mesh path relative to URDF directory
+                        if mesh_path.startswith('package://'):
+                            # Handle package:// URLs if needed
+                            mesh_path = mesh_path.replace('package://', '')
+                            # You might need additional logic here for package resolution
+                        
+                        # Create absolute path
+                        full_mesh_path = os.path.join(urdf_dir, mesh_path)
+                        full_mesh_path = os.path.abspath(full_mesh_path)
+                        
+                        print(f"      Mesh path resolved to: {full_mesh_path}")
                         #full_mesh_path = yourdfpy.utils.resolve_path(mesh_path, pkg_dirs)
 
                         if not os.path.exists(full_mesh_path):
@@ -160,20 +170,16 @@ def combine_urdf_meshes_to_stl(urdf_path, output_stl_path, package_dir_map=None)
 # --- How to use ---
 if __name__ == "__main__":
     # IMPORTANT: Replace with the actual path to your URDF file
-    urdf_file = "/home/zifanw/rl_robot/LidarSensor/LidarSensor/resources/robots/g1_29/g1_29dof.urdf"
-
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    relative_urdf_path = "g1_29dof.urdf"
+    urdf_file = os.path.join(script_dir, relative_urdf_path)
+    print(f"Using URDF file: {urdf_file}")
     # IMPORTANT: Replace with the desired output STL file path
-    output_file = "/home/zifanw/rl_robot/LidarSensor/LidarSensor/resources/robots/robot_combined.stl"
+    relative_output_path = "robot_combined.stl"
+    output_file = os.path.join(script_dir, relative_output_path)
+    print(f"Output STL file will be saved to: {output_file}")
 
-    # IMPORTANT: If your URDF uses 'package://' paths, define the mapping here.
-    # Example: If your URDF has <mesh filename="package://my_robot_description/meshes/base_link.stl"/>
-    # and your package is located at '/home/user/ros_ws/src/my_robot_description'
-    # package_directories = {
-    #    'my_robot_description': '/home/user/ros_ws/src/my_robot_description',
-    #    'another_package': '/path/to/another_package'
-    #    # Add more packages if needed
-    # }
-    # If you don't use 'package://' or your paths are absolute/relative to the URDF, set this to None or {}
+
     package_directories = None
 
     # Check if the URDF file exists before running
