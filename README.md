@@ -53,3 +53,6 @@ source /opt/ros/humble/setup.bash
 # Please use /usr/bin/python3
 /usr/bin/python3 LidarSensor/LidarSensor/sensor_pattern/sensor_lidar/lidar_vis_ros1.py or lidar_vis_ros2.py
 ```
+
+
+# **locomotion Policy Training**
