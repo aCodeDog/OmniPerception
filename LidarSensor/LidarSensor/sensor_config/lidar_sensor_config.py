@@ -5,7 +5,7 @@ import numpy as np
 class LidarConfig(BaseSensorConfig):
     num_sensors = 1  # number of sensors of this type
 
-    sensor_type = "lidar"  # mid360,mid avia,mid
+    sensor_type = "avia"  # mid360,horizon,HAP,mid70,mid40,tele
     
     dt = 0.02  # time step for the sim env
     

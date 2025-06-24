@@ -152,7 +152,7 @@ def farthest_point_sampling(point_cloud, sample_size):
 
 class Go2Env:
     def __init__(self, 
-                 num_envs=1, 
+                 num_envs=5, 
                  num_obstacles=5,
                  publish_ros=True,
                  save_data=False,
@@ -176,7 +176,7 @@ class Go2Env:
         self.save_interval = save_interval
         self.save_time = 0
         self.last_save_time = 0
-
+        wp.init()
         if self.save_data:
             # 创建保存数据的目录
             self.data_dir = f"./sensor_data_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -716,7 +716,7 @@ class Go2Env:
     def create_obstacles_warp_mesh(self,obstacle_meshes,obstacle_transformations):
         # triangles = self.terrain.triangles
         # vertices = self.terrain.vertices
-        wp.init()
+        
         
         
         self.warp_mesh_per_env =[]

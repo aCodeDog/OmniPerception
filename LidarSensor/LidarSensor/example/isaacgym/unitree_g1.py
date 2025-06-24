@@ -304,7 +304,7 @@ class G1Env:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         self.sensor_cfg = LidarConfig()
-        self.sensor_cfg.sensor_type ="mid360"
+        self.sensor_cfg.sensor_type ="avia" # mid360,horizon,HAP,mid70,mid40,tele,avia
         self.sim_time = 0
         self.sensor_update_time = 0
         self.state_update_time = 0
@@ -315,7 +315,7 @@ class G1Env:
         self.save_time = 0
         self.last_save_time = 0
         self.sequence_number=0
-
+        wp.init()
         if self.save_data:
             # 创建保存数据的目录
             self.data_dir = f"./sensor_data_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -899,7 +899,6 @@ class G1Env:
     def create_obstacles_warp_mesh(self,obstacle_meshes,obstacle_transformations):
         # triangles = self.terrain.triangles
         # vertices = self.terrain.vertices
-        wp.init()
         
         
         self.warp_mesh_per_env =[]

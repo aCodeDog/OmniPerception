@@ -1,13 +1,13 @@
-# 特定的大文件 - 机器人模型文件
+
 LidarSensor/LidarSensor/resources/robots/g1_29/robot_combined.stl
 LidarSensor/LidarSensor/resources/robots/go2/robot_combined.stl
 
-# Python缓存文件
+
 __pycache__/
 *.py[cod]
 *$py.class
 
-# 分发/打包
+
 .Python
 build/
 develop-eggs/
@@ -27,7 +27,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# 虚拟环境
+
 .env
 .venv
 env/
@@ -36,14 +36,14 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE和编辑器
+
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# 操作系统
+
 .DS_Store
 .DS_Store?
 ._*
@@ -52,9 +52,9 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# 日志文件
+
 *.log
 
-# 临时文件
+
 *.tmp
 *.temp

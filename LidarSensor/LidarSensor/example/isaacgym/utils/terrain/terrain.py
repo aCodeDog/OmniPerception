@@ -74,7 +74,7 @@ class Terrain:
             else:
                 self.curiculum(random=True)
             # self.randomized_terrain()   
-        self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
+        #self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
             print("Converting heightmap to trimesh...")

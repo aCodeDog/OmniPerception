@@ -36,7 +36,6 @@ class LidarSensor(BaseSensor):
         self.robot_angvel = None
         
         self.num_envs = self.env['num_envs']
-
         self.mesh_ids = self.env['mesh_ids']
         self.num_vertical_lines = self.sensor_cfg.vertical_line_num
         self.num_horizontal_lines = self.sensor_cfg.horizontal_line_num
@@ -67,7 +66,7 @@ class LidarSensor(BaseSensor):
         self.lidar_quat_array = None
         self.graph = None
         
-        self.livox_generator = LivoxGenerator("mid360")
+        self.livox_generator = LivoxGenerator(self.sensor_cfg.sensor_type)
         
         
         

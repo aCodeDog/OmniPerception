@@ -6,7 +6,7 @@
 
 ## **NOTE**
 
-**[Trying hard!] This repository is still not fully built. This is due to my poor coding habits, and many places need to be reorganized ！！！**
+**[Trying hard!] This repository is still not fully built. This is due to my terrible coding habits, and many places need to be reorganized ！！！**
 
 According to isaacgym's test on GPU 4090, using **4096 lidar (20000 rays)** environment, the rendering time of each step is about **250 ms**.
 
@@ -56,3 +56,12 @@ source /opt/ros/humble/setup.bash
 
 
 # **locomotion Policy Training**
+
+
+
+
+
+
+
+
+### **Acknowledge**
