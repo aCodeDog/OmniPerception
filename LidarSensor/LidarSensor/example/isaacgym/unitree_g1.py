@@ -2,13 +2,14 @@ import numpy as np
 
 
 import numpy as np
+import isaacgym
 from isaacgym import gymutil
 from isaacgym import gymapi,gymtorch
 from isaacgym.torch_utils import *
 from math import sqrt
 import torch
 from LidarSensor.lidar_sensor import LidarSensor
-from LidarSensor.sensor_config.lidar_sensor_config import LidarConfig
+from LidarSensor.sensor_config.lidar_sensor_config import LidarConfig, LidarType
 import random
 import time
 import trimesh

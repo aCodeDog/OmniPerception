@@ -1,6 +1,108 @@
 import os
 import numpy as np
 from functools import lru_cache
+from typing import Tuple, Union
+
+
+class SpinningLidarGenerator:
+    """Generator for traditional spinning lidar patterns"""
+    
+    @staticmethod
+    def generate_HDL64(f_rot=10.0, sample_rate=2.2e6, n_channels=64, phi_fov=(-24.9, 2.0)):
+        """Generate Velodyne HDL-64 scan pattern"""
+        phi_min, phi_max = np.deg2rad(phi_fov)
+        
+        # Time sequence
+        t = np.arange(0, 1./f_rot, n_channels/sample_rate)[:, None]
+        
+        # Horizontal angle
+        theta = (2 * np.pi * f_rot * t) % (2 * np.pi)
+        
+        # Vertical angle
+        phi = np.linspace(phi_min, phi_max, n_channels)
+        
+        # Generate grids
+        theta_grid = theta + np.zeros((1, n_channels))
+        phi_grid = np.zeros_like(theta) + phi
+        
+        return theta_grid.flatten(), phi_grid.flatten()
+    
+    @staticmethod
+    def generate_VLP32(f_rot=10.0, sample_rate=1.2e6):
+        """Generate Velodyne VLP-32 scan pattern"""
+        vlp32_angles = np.array([
+            -25.0, -22.5, -20.0, -15.0, -13.0, -10.0, -5.0, -3.0, 
+            -2.333, -1.0, -0.667, -0.333, 0.0, 0.0, 0.333, 0.667, 
+            1.0, 1.333, 1.667, 2.0, 2.333, 2.667, 3.0, 3.333, 
+            3.667, 4.0, 5.0, 7.0, 10.0, 15.0, 17.0, 20.0
+        ])
+        phi = np.deg2rad(vlp32_angles)
+        
+        # Time sequence
+        t = np.arange(0, 1/f_rot, 32/sample_rate)[:, None]
+        
+        # Horizontal angle
+        theta = (2 * np.pi * f_rot * t) % (2 * np.pi)
+        
+        # Generate grids
+        theta_grid = theta + np.zeros_like(phi)
+        phi_grid = np.zeros_like(theta) + phi
+        
+        return theta_grid.flatten(), phi_grid.flatten()
+    
+    @staticmethod
+    def generate_OS128(f_rot=20.0, sample_rate=5.2e6):
+        """Generate Ouster OS-128 scan pattern"""
+        n_channels = 128
+        phi = np.deg2rad(np.linspace(-22.5, 22.5, n_channels))
+        
+        # Time sequence
+        t = np.arange(0, 1/f_rot, n_channels/sample_rate)[:, None]
+        
+        # Horizontal angle
+        theta = (2 * np.pi * f_rot * t) % (2 * np.pi)
+        
+        # Generate grids
+        theta_grid = theta + np.zeros_like(phi)
+        phi_grid = np.zeros_like(theta) + phi
+        
+        return theta_grid.flatten(), phi_grid.flatten()
+
+
+class LidarRayGeneratorFactory:
+    """Factory class to create ray generators for different lidar types"""
+    
+    @staticmethod
+    def create_generator(sensor_type: str):
+        """Create appropriate ray generator based on sensor type"""
+        if sensor_type == "simple_grid":
+            return None  # Handled directly in LidarSensor
+        elif sensor_type in ["avia", "horizon", "HAP", "mid360", "mid40", "mid70", "tele"]:
+            return LivoxGenerator(sensor_type)
+        elif sensor_type == "hdl64":
+            return SpinningLidarGenerator()
+        elif sensor_type == "vlp32":
+            return SpinningLidarGenerator()
+        elif sensor_type == "os128":
+            return SpinningLidarGenerator()
+        else:
+            raise ValueError(f"Unsupported sensor type: {sensor_type}")
+    
+    @staticmethod
+    def generate_ray_angles(sensor_type: str, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate ray angles for any supported sensor type"""
+        if sensor_type == "hdl64":
+            return SpinningLidarGenerator.generate_HDL64(**kwargs)
+        elif sensor_type == "vlp32":
+            return SpinningLidarGenerator.generate_VLP32(**kwargs)
+        elif sensor_type == "os128":
+            return SpinningLidarGenerator.generate_OS128(**kwargs)
+        elif sensor_type in ["avia", "horizon", "HAP", "mid360", "mid40", "mid70", "tele"]:
+            generator = LivoxGenerator(sensor_type)
+            return generator.sample_ray_angles()
+        else:
+            raise ValueError(f"Unsupported sensor type: {sensor_type}")
+
 
 class LivoxGenerator:
     """
@@ -85,94 +187,23 @@ class LivoxGenerator:
         return self.ray_out[:, 0], self.ray_out[:, 1]
 
 # =======================================================================
-# 1. Velodyne HDL-64 (任意 360° 旋转式激光雷达)
-# https://www.mapix.com/wp-content/uploads/2018/07/63-9194_Rev-J_HDL-64E_S3_Spec-Sheet-Web.pdf
+# Legacy functions for backward compatibility
 # =======================================================================
 
+# Deprecated: Use SpinningLidarGenerator.generate_HDL64 instead
+def generate_HDL64(f_rot=10.0, sample_rate=2.2e6, n_channels=64, phi_fov=(-24.9, 2.)):
+    """DEPRECATED: Use SpinningLidarGenerator.generate_HDL64 instead"""
+    return SpinningLidarGenerator.generate_HDL64(f_rot, sample_rate, n_channels, phi_fov)
 
-def generate_HDL64(     # |参数            | Velodyne HDL-64
-    f_rot=10.0,            # |转速 (Hz)       |  5-20Hz
-    sample_rate=2.2e6,     # |采样率 (Hz)     | 2.2MHz
-    n_channels=64,         # |垂直通道数       | 64 (Vertical Angular Resolution : 0.4°)
-    phi_fov=(-24.9, 2.)    # |垂直视场角 (度)  | (-24.9°, 2.°)
-):
-    # 转换为弧度
-    phi_min, phi_max = np.deg2rad(phi_fov)
-    
-    # 时间序列（列向量）
-    t = np.arange(0, 1./f_rot, n_channels/sample_rate)[:, None]  # shape: (n_times, 1)
-    
-    # 水平角计算（广播机制）
-    theta = (2 * np.pi * f_rot * t) % (2 * np.pi)      # shape: (n_times, 1)
-    
-    # 垂直角（行向量）
-    phi = np.linspace(phi_min, phi_max, n_channels)     # shape: (1, n_channels)
-    
-    # 生成网格（无需显式使用meshgrid）
-    theta_grid = theta + np.zeros((1, n_channels))      # 广播至 (n_times, n_channels)
-    phi_grid = np.zeros_like(theta) + phi               # 广播至 (n_times, n_channels)
-    
-    return theta_grid.flatten(), phi_grid.flatten()
+# Deprecated: Use SpinningLidarGenerator.generate_VLP32 instead  
+def generate_vlp32(f_rot=10.0, sample_rate=1.2e6):
+    """DEPRECATED: Use SpinningLidarGenerator.generate_VLP32 instead"""
+    return SpinningLidarGenerator.generate_VLP32(f_rot, sample_rate)
 
-# =======================================================================
-# 2. Velodyne VLP-32 模式
-# https://www.mapix.com/lidar-scanner-sensors/velodyne/velodyne-vlp-32c/
-# =======================================================================
-@lru_cache(maxsize=8)
-def _get_vlp32_angles():
-    """使用缓存获取VLP-32的角度分布，避免重复计算，返回弧度值"""
-    vlp32_angles = np.array([
-        -25.0, -22.5, -20.0, -15.0, -13.0, -10.0, -5.0, -3.0, 
-        -2.333, -1.0, -0.667, -0.333, 0.0, 0.0, 0.333, 0.667, 
-        1.0, 1.333, 1.667, 2.0, 2.333, 2.667, 3.0, 3.333, 
-        3.667, 4.0, 5.0, 7.0, 10.0, 15.0, 17.0, 20.0
-    ])
-    # 转换为弧度并裁剪
-    vlp32_angles = np.deg2rad(vlp32_angles)
-    return vlp32_angles
-
-def generate_vlp32(
-    f_rot=10.0,       # 转速 (Hz)
-    sample_rate=1.2e6 # 采样率 (Hz)
-):
-    # 垂直角参数
-    phi = _get_vlp32_angles()       # shape: (n_channels,)
-    
-    # 时间序列（列向量）
-    t = np.arange(0, 1/f_rot, 32/sample_rate)[:, None]  # shape: (n_times, 1)
-    
-    # 水平角计算
-    theta = (2 * np.pi * f_rot * t) % (2 * np.pi)      # shape: (n_times, 1)
-    
-    # 广播生成网格
-    theta_grid = theta + np.zeros_like(phi)            # shape: (n_times, n_channels)
-    phi_grid = np.zeros_like(theta) + phi              # shape: (n_times, n_channels)
-    
-    return theta_grid.flatten(), phi_grid.flatten()
-
-# =======================================================================
-# 3. Ouster OS-128 模式
-# https://www.general-laser.at/en/shop-en/ouster-os0-128-lidar-sensor-en
-# =======================================================================
-def generate_os128(
-    f_rot=20.0,            # 转速 (Hz)
-    sample_rate=5.2e6,     # 采样率 (Hz)
-):
-    # 垂直角参数（均匀分布）
-    n_channels = 128
-    phi = np.deg2rad(np.linspace(-22.5, 22.5, n_channels))  # shape: (n_channels,)
-    
-    # 时间序列（列向量）
-    t = np.arange(0, 1/f_rot, n_channels/sample_rate)[:, None]     # shape: (n_times, 1)
-    
-    # 水平角计算
-    theta = (2 * np.pi * f_rot * t) % (2 * np.pi)         # shape: (n_times, 1)
-    
-    # 广播生成网格
-    theta_grid = theta + np.zeros_like(phi)               # shape: (n_times, n_channels)
-    phi_grid = np.zeros_like(theta) + phi                 # shape: (n_times, n_channels)
-    
-    return theta_grid.flatten(), phi_grid.flatten()
+# Deprecated: Use SpinningLidarGenerator.generate_OS128 instead
+def generate_os128(f_rot=20.0, sample_rate=5.2e6):
+    """DEPRECATED: Use SpinningLidarGenerator.generate_OS128 instead"""
+    return SpinningLidarGenerator.generate_OS128(f_rot, sample_rate)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<robot name="pillar">
+  <link name="pillar">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="pillar_08x08x3.stl" scale="1.0 1.0 1.0"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="pillar_08x08x3.stl" scale="1.0 1.0 1.0"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.01"/>
+    </inertial>
+  </link>
+</robot>
+
+<!-- <?xml version="1.0"?>
+<robot name="pillar">
+  <link name="pillar">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="pillar_08x08x3.stl" scale="1.0 1.0 1.0"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0"/>
+      <geometry>
+         <mesh filename="pillar_08x08x3.stl" scale="1.0 1.0 1.0"/>
+      </geometry>
+    </collision>
+    <inertial>
+       <mass value="1."/>
+       <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+</robot> -->
+
