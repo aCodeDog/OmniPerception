@@ -283,9 +283,7 @@ class GenesisG1LidarVisualizer:
             "LidarSensor/resources/robots/g1_29/g1_29dof.urdf",
             "../resources/robots/g1_29/g1_29dof.urdf", 
             "../../resources/robots/g1_29/g1_29dof.urdf",
-            "/home/zifanw/rl_robot/OmniPerception/LidarSensor/LidarSensor/resources/robots/g1_29/g1_29dof.urdf"
-        ]
-        
+        ]   
         for path in paths:
             if os.path.exists(path):
                 return path
@@ -357,7 +355,16 @@ class GenesisG1LidarVisualizer:
             wp.init()
             
             # Create lidar config
-            sensor_config = LidarConfig()
+            sensor_config = LidarConfig(
+                sensor_type=LidarType.HORIZON,  # Choose your sensor type
+                dt=0.02,  # CRITICAL: Must match simulation dt
+                max_range=20.0,
+                update_frequency=1.0/0.02,  # Update every simulation step
+                return_pointcloud=True,
+                pointcloud_in_world_frame=False,  # Get local coordinates first
+                enable_sensor_noise=False,  # Disable for faster processing
+            )
+
             
             # For grid-based sensors, set reasonable resolution
             if self.sensor_type == LidarType.SIMPLE_GRID:

@@ -1,6 +1,7 @@
 from .base_sensor_config import BaseSensorConfig
 import numpy as np
 from enum import Enum
+from dataclasses import dataclass, field
 
 
 class LidarType(Enum):
@@ -23,6 +24,7 @@ class LidarType(Enum):
     OS128 = "os128"
 
 
+@dataclass
 class LidarConfig(BaseSensorConfig):
     """Optimized LidarSensor configuration"""
     
@@ -57,18 +59,18 @@ class LidarConfig(BaseSensorConfig):
     pixel_std_dev_multiplier: float = 0.01
     
     # Transform settings
-    euler_frame_rot_deg: list = [0.0, 0.0, 0.0]
+    euler_frame_rot_deg: list = field(default_factory=lambda: [0.0, 0.0, 0.0])
     
     # Placement randomization
     randomize_placement: bool = True
-    min_translation: list = [0.07, -0.06, 0.01]
-    max_translation: list = [0.12, 0.03, 0.04]
-    min_euler_rotation_deg: list = [-5.0, -5.0, -5.0]
-    max_euler_rotation_deg: list = [5.0, 5.0, 5.0]
+    min_translation: list = field(default_factory=lambda: [0.07, -0.06, 0.01])
+    max_translation: list = field(default_factory=lambda: [0.12, 0.03, 0.04])
+    min_euler_rotation_deg: list = field(default_factory=lambda: [-5.0, -5.0, -5.0])
+    max_euler_rotation_deg: list = field(default_factory=lambda: [5.0, 5.0, 5.0])
     
     # Nominal position (for Isaac Gym sensors)
-    nominal_position: list = [0.10, 0.0, 0.03]
-    nominal_orientation_euler_deg: list = [0.0, 0.0, 0.0]
+    nominal_position: list = field(default_factory=lambda: [0.10, 0.0, 0.03])
+    nominal_orientation_euler_deg: list = field(default_factory=lambda: [0.0, 0.0, 0.0])
     
     # Data normalization
     normalize_range: bool = False
