@@ -12,9 +12,10 @@ import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import PointCloud2, PointField
 from visualization_msgs.msg import MarkerArray
 
-from discoverse.envs.mj_lidar import MjLidarSensor, create_lidar_rays, create_demo_scene
-from discoverse.examples.sensor_lidar.visual_utils import KeyboardListener, create_marker_from_geom
-from discoverse.examples.sensor_lidar.genera_lidar_scan_pattern import \
+
+from mj_lidar import MjLidarSensor, create_lidar_rays, create_demo_scene
+from visual_utils import KeyboardListener, create_marker_from_geom
+from genera_lidar_scan_pattern import \
     LivoxGenerator, \
     generate_HDL64, \
     generate_vlp32, \
