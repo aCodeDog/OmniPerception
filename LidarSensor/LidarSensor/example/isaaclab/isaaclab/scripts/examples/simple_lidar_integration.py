@@ -27,7 +27,7 @@ from isaaclab.app import AppLauncher
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Tutorial on creating a quadruped base environment with LiDAR.")
 parser.add_argument("--num_envs", type=int, default=4, help="Number of environments to spawn.")
-parser.add_argument("--enable_lidar", action="store_true", help="Enable LiDAR sensor for benchmarking.")
+parser.add_argument("--enable_lidar", type=bool, default=True ,help="Enable LiDAR sensor for benchmarking.")
 parser.add_argument("--benchmark_steps", type=int, default=1000, help="Number of steps to run for benchmarking.")
 
 # append AppLauncher cli args

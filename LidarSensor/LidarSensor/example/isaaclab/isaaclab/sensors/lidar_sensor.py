@@ -16,7 +16,7 @@ import math
 import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
-
+from isaaclab.utils.math import quat_apply
 from .ray_caster import RayCaster
 from .lidar_sensor_data import LidarSensorData
 
@@ -76,7 +76,21 @@ class LidarSensor(RayCaster):
         # Update buffers if needed
         self._update_outdated_buffers()
         return self._data
+    def _get_true_sensor_pos(self) -> torch.Tensor:
+        """Calculates the true world position of the sensor, including the local offset."""
+        # Get the stored base prim pose
+        base_pos_w = self._data.pos_w
+        base_quat_w = self._data.quat_w
 
+        # Get the local offset from the config
+        local_offset = torch.tensor(self.cfg.offset.pos, device=self.device)
+        local_offset = local_offset.expand(base_pos_w.shape[0], -1)
+
+        # Rotate the local offset to align with the base prim's world orientation
+        world_offset = quat_apply(base_quat_w, local_offset)
+        
+        # The true sensor position is the base position plus the world-space offset
+        return base_pos_w + world_offset
     def _initialize_rays_impl(self):
         """Initialize ray patterns for LiDAR sensor."""
         # Call parent implementation
@@ -106,12 +120,13 @@ class LidarSensor(RayCaster):
         # Call parent implementation for ray casting
         super()._update_buffers_impl(env_ids)
         
-        # Calculate distances from hit points
-        sensor_pos = self._data.pos_w[env_ids].unsqueeze(1)  # (N, 1, 3)
-        hit_points = self._data.ray_hits_w[env_ids]  # (N, num_rays, 3)
         
+        sensor_pos = self._get_true_sensor_pos()[env_ids].unsqueeze(1)
+
         # Calculate distances
+        hit_points = self._data.ray_hits_w[env_ids]
         distances = torch.norm(hit_points - sensor_pos, dim=2)
+        
         
         # Handle out-of-range values
         inf_mask = torch.isinf(hit_points).any(dim=2)
