@@ -46,7 +46,7 @@ import time
 
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg,RigidObjectCfg
 from isaaclab.envs import ManagerBasedEnv, ManagerBasedEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -112,7 +112,6 @@ class MySceneCfg(InteractiveSceneCfg):
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )
-    
     # Conditionally add LiDAR sensor based on args
     if args_cli.enable_lidar:
         # LiDAR sensor
@@ -120,11 +119,12 @@ class MySceneCfg(InteractiveSceneCfg):
             prim_path="{ENV_REGEX_NS}/Robot/base",
             offset=LidarSensorCfg.OffsetCfg(pos=(0.0, 0.0, 0.0), rot=(0, 1, 0., 0.)),
             attach_yaw_only=False,
+            ray_alignment = "world",
             pattern_cfg=LivoxPatternCfg(
                 sensor_type="mid360",
                 samples=24000,  # Reduced for better performance with 1024 envs
             ),
-            mesh_prim_paths=["/World/ground"],
+            mesh_prim_paths=["/World/ground","/World/static"],
             max_distance=20.0,
             min_range=0.2,
             return_pointcloud=False,  # Disable pointcloud for performance
@@ -141,6 +141,39 @@ class MySceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
+    Cube = AssetBaseCfg(
+        prim_path="/World/static/Cubes_1",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.3, 0.3, 0.3),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 1.0), metallic=0.2),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 1.0, 1.0)),
+    )
+    Cube_2 = AssetBaseCfg(
+        prim_path="/World/static/Cubes_2",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.3, 0.3, 0.3),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 1.0), metallic=0.2),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(1.0, -1.0, 1.0)),
+    )
+    Sphere = AssetBaseCfg(
+        prim_path="/World/static/Spheres_1",
+        spawn=sim_utils.SphereCfg(
+            radius=0.4,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0), metallic=0.2),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -1.0, 1.0)),
+    )
 
 ##
 # MDP settings

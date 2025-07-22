@@ -11,7 +11,7 @@
 """Configuration for the LiDAR sensor."""
 
 from dataclasses import MISSING
-
+from typing import Literal
 from isaaclab.utils import configclass
 
 from .ray_caster import RayCasterCfg
@@ -27,7 +27,7 @@ class LidarSensorCfg(RayCasterCfg):
     """
 
     class_type: type = LidarSensor
-
+    ray_alignment: Literal["base", "yaw", "world"] = "yaw"
     # LiDAR-specific timing parameters
     update_frequency: float = 50.0
     """LiDAR update frequency in Hz. Defaults to 50.0 Hz."""
