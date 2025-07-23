@@ -14,7 +14,7 @@ from isaaclab.markers.config import RAY_CASTER_MARKER_CFG
 from isaaclab.utils import configclass
 
 from ..sensor_base_cfg import SensorBaseCfg
-from .patterns.patterns import PatternBaseCfg
+from .patterns.patterns_cfg import PatternBaseCfg
 from .ray_caster import RayCaster
 
 
