@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🌟 **OmniPerception**
-
-*High-Performance Multi-Modal Sensor Simulation for Robotics*
+# 🌟 **OmniPerception** 
+*Omnidirectional Collision Avoidance for Legged Locomotion in Dynamic Environments*
+ ###  CoRL 2025  
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.0%2B-green.svg)](https://developer.nvidia.com/cuda-toolkit)
@@ -221,76 +221,7 @@ Choose your simulation platform for detailed installation and usage instructions
 
 **📂 [**Complete Genesis Guide**](https://github.com/aCodeDog/OmniPerception/blob/main/LidarSensor/LidarSensor/example/genesis/)**
 
----
 
-
-### **🎯 Quick Start**
-
-Choose your platform above and follow the complete installation guide. Each platform includes:
-- ✅ **Step-by-step installation** with automated scripts
-- ✅ **Configuration examples** for different use cases  
-- ✅ **Performance benchmarks** and optimization tips
-- ✅ **Troubleshooting guides** for common issues
-- ✅ **Complete working examples** with popular robots
-
----
-
-## **✨ Key Features**
-
-### **🔬 Realistic Sensor Models**
-- **7+ Livox LiDAR Types**: Mid-360, Avia, Horizon, HAP, Mid-40, Mid-70, Tele
-- **Authentic Scan Patterns**: Real `.npy` files from actual hardware
-- **Velodyne & Ouster Support**: HDL-64, VLP-32, OS-128 patterns
-- **Noise Simulation**: Distance noise, pixel dropout, and angle variance
-
-### **⚡ High Performance**
-- **GPU-Accelerated**: CUDA/Warp-based ray tracing for massive parallelism
-- **Vectorized Operations**: No Python loops, optimized for 1000+ environments
-- **Memory Efficient**: Smart tensor management and reuse
-- **Configurable LOD**: Adjustable ray density for performance tuning
-
-### **🎨 Easy Integration**
-- **One-Line Setup**: Simple sensor configuration with sensible defaults
-- **Multiple Output Formats**: Distance arrays, point clouds, hit positions
-- **Flexible Mounting**: Dynamic sensor positioning with offset transforms
-- **Debug Visualization**: Built-in ray visualization for development
-
----
-
-## **🤖 Supported Robots & Platforms**
-
-### **Robot Platforms**
-- **Quadrupeds**: Unitree Go2, G1, ANYmal, Spot
-- **Humanoids**: G1, Atlas, Digit, custom bipeds
-- **Mobile Robots**: Custom wheeled/tracked platforms
-- **Multi-Robot**: Support for heterogeneous robot swarms
-
-### **Simulation Engines**
-- **IsaacLab** ⭐ - Next-gen RL platform with native integration
-- **IsaacGym** - NVIDIA's GPU-accelerated physics engine  
-- **Genesis** - High-performance modern physics simulation
-- **Mujoco** - Advanced contact dynamics (coming soon)
-- **Isaac Sim** - Omniverse integration (coming soon)
-
----
-
-## **🏃‍♂️ Policy Training**
-
-> 📚 **Ready for RL Training?** Check our training examples in each platform directory with complete locomotion policies for quadruped robots.
-
----
-
-## **🎓 What You Get**
-
-After following your platform-specific guide, you'll have:
-
-✅ **Realistic LiDAR simulation** with authentic sensor patterns  
-✅ **High-performance ray-casting** optimized for large-scale training  
-✅ **Complete robot examples** with popular quadruped and humanoid robots  
-✅ **Flexible configuration** for different use cases and research needs  
-✅ **Production-ready code** tested with 1000+ environments  
-
----
 
 ## **🤝 Contributing & Support**
 
@@ -299,6 +230,19 @@ After following your platform-specific guide, you'll have:
 - **🔬 Research**: Cite our work if you use OmniPerception in research
 - **💬 Discussions**: Join our community for tips and collaboration
 
----
+
+
+
+
+### **Cite**
+
+```
+@article{wang2025omni,
+  title={Omni-Perception: Omnidirectional Collision Avoidance for Legged Locomotion in Dynamic Environments},
+  author={Wang, Zifan and Ma, Teli and Jia, Yufei and Yang, Xun and Zhou, Jiaming and Ouyang, Wenlong and Zhang, Qiang and Liang, Junwei},
+  journal={arXiv preprint arXiv:2505.19214},
+  year={2025}
+}
+```
 
 ### **Acknowledgments**
