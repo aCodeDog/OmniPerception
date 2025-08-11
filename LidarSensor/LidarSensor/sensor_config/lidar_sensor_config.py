@@ -9,6 +9,9 @@ class LidarType(Enum):
     # Simple grid-based lidar
     SIMPLE_GRID = "simple_grid"
     
+    # Height scanner
+    HEIGHT_SCANNER = "height_scanner"
+    
     # Livox sensors
     AVIA = "avia"
     HORIZON = "horizon" 
@@ -35,7 +38,7 @@ class LidarConfig(BaseSensorConfig):
     update_frequency: float = 50.0  # sensor update rate in Hz
     
     # Range settings
-    max_range: float = 20.0
+    max_range: float = 50.0
     min_range: float = 0.2
     
     # Grid-based lidar settings (only used when sensor_type is SIMPLE_GRID)
@@ -45,6 +48,14 @@ class LidarConfig(BaseSensorConfig):
     horizontal_fov_deg_max: float = 180
     vertical_fov_deg_min: float = -2
     vertical_fov_deg_max: float = 57
+    
+    # Height scanner settings (only used when sensor_type is HEIGHT_SCANNER)
+    height_scanner_size: list = field(default_factory=lambda: [2.0, 2.0])  # [length, width] in meters
+    height_scanner_resolution: float = 0.1  # spacing between rays in meters
+    height_scanner_direction: list = field(default_factory=lambda: [0.0, 0.0, -1.0])  # ray direction (downward)
+    height_scanner_ordering: str = "xy"  # grid ordering: "xy" or "yx"
+    height_scanner_offset: list = field(default_factory=lambda: [0.0, 0.0])  # [x, y] offset in meters for ray start positions
+    height_scanner_height_above_ground: float = 10.0  # height above ground level where rays start (in meters)
     
     # Output settings
     return_pointcloud: bool = True
@@ -99,6 +110,11 @@ class LidarConfig(BaseSensorConfig):
     def is_simple_grid(self) -> bool:
         """Check if this is a simple grid-based lidar"""
         return self.sensor_type == LidarType.SIMPLE_GRID
+    
+    @property
+    def is_height_scanner(self) -> bool:
+        """Check if this is a height scanner"""
+        return self.sensor_type == LidarType.HEIGHT_SCANNER
     
     @property
     def is_livox_sensor(self) -> bool:

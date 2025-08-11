@@ -75,6 +75,9 @@ class LidarSensor(BaseSensor):
         if self.sensor_cfg.is_simple_grid:
             self._setup_grid_parameters()
             self.ray_generator = None
+        elif self.sensor_cfg.is_height_scanner:
+            self._setup_height_scanner_parameters()
+            self.ray_generator = None
         elif self.sensor_cfg.is_livox_sensor:
             self.ray_generator = LivoxGenerator(sensor_type_str)
             # For Livox sensors, dimensions will be set in initialize_ray_vectors
@@ -108,10 +111,43 @@ class LidarSensor(BaseSensor):
         if vertical_fov > math.pi:
             raise ValueError("Vertical FOV must be less than π")
 
+    def _setup_height_scanner_parameters(self):
+        """Setup parameters for height scanner"""
+        # Validate configuration
+        if self.sensor_cfg.height_scanner_resolution <= 0:
+            raise ValueError(f"Height scanner resolution must be greater than 0. Received: {self.sensor_cfg.height_scanner_resolution}")
+        
+        if self.sensor_cfg.height_scanner_ordering not in ["xy", "yx"]:
+            raise ValueError(f"Height scanner ordering must be 'xy' or 'yx'. Received: '{self.sensor_cfg.height_scanner_ordering}'")
+        
+        # Calculate grid dimensions
+        size_x, size_y = self.sensor_cfg.height_scanner_size
+        resolution = self.sensor_cfg.height_scanner_resolution
+        
+        # Calculate number of points in each dimension
+        num_x = int(size_x / resolution) + 1
+        num_y = int(size_y / resolution) + 1
+        
+        # Set grid dimensions based on ordering
+        if self.sensor_cfg.height_scanner_ordering == "xy":
+            self.num_horizontal_lines = num_x
+            self.num_vertical_lines = num_y
+        else:  # "yx"
+            self.num_horizontal_lines = num_y
+            self.num_vertical_lines = num_x
+        
+        # Store grid parameters for ray generation
+        self.height_scanner_size = self.sensor_cfg.height_scanner_size
+        self.height_scanner_resolution = self.sensor_cfg.height_scanner_resolution
+        self.height_scanner_direction = self.sensor_cfg.height_scanner_direction
+        self.height_scanner_ordering = self.sensor_cfg.height_scanner_ordering
+
     def initialize_ray_vectors(self):
         """Initialize ray vectors based on sensor type"""
         if self.sensor_cfg.is_simple_grid:
             self._initialize_grid_rays()
+        elif self.sensor_cfg.is_height_scanner:
+            self._initialize_height_scanner_rays()
         else:
             self._initialize_pattern_rays()
             
@@ -146,6 +182,62 @@ class LidarSensor(BaseSensor):
         normalized_rays = ray_vectors / torch.norm(ray_vectors, dim=2, keepdim=True)
         self.ray_vectors = wp.from_torch(normalized_rays, dtype=wp.vec3)
 
+    def _initialize_height_scanner_rays(self):
+        """Initialize rays for height scanner pattern"""
+        
+        # Get grid parameters
+        size_x, size_y = self.sensor_cfg.height_scanner_size  # e.g., [4.0, 4.0] meters
+        resolution = self.sensor_cfg.height_scanner_resolution  # e.g., 0.5 meters
+        
+        # Calculate number of rays per axis
+        self.num_horizontal_lines = int(size_x / resolution) + 1  # +1 to include endpoints
+        self.num_vertical_lines = int(size_y / resolution) + 1
+        
+        print(f"Height scanner setup: {self.num_horizontal_lines}x{self.num_vertical_lines} grid, {resolution}m spacing")
+        
+        # Create grid coordinates relative to robot center
+        x_coords = torch.arange(start=-size_x/2, end=size_x/2+ 1.0e-9, step=resolution, device=self.device)
+        y_coords = torch.arange(start=-size_y/2, end=size_y/2+ 1.0e-9, step=resolution, device=self.device)
+        grid_x, grid_y = torch.meshgrid(x_coords, y_coords, indexing='xy')
+        
+        # Ray directions (all pointing downward)
+        direction = self.sensor_cfg.height_scanner_direction  # [0, 0, -1]
+        base_direction = torch.tensor(direction, device=self.device, dtype=torch.float32)
+        
+        # Initialize ray origins and directions tensors
+        # IMPORTANT: Match tensor dimensions with grid dimensions
+        # grid_x, grid_y have shape (num_horizontal_lines, num_vertical_lines)
+        ray_origins = torch.zeros((self.num_horizontal_lines, self.num_vertical_lines, 3), 
+                                device=self.device, dtype=torch.float32)
+        ray_directions = torch.zeros((self.num_horizontal_lines, self.num_vertical_lines, 3), 
+                                   device=self.device, dtype=torch.float32)
+        
+        # For height scanner: rays start above the ground grid positions
+        # Define ray origins in ROBOT'S LOCAL COORDINATE FRAME
+        # This ensures the grid follows robot orientation
+        height_above_ground = self.sensor_cfg.height_scanner_height_above_ground  # Configurable height above ground
+        offset_x, offset_y = self.sensor_cfg.height_scanner_offset  # Configurable x, y offset
+        
+        num_rays = grid_x.numel()
+        ray_origins = torch.zeros(num_rays, 3, device=self.device)
+        ray_origins[:, 0] = grid_x.flatten()
+        ray_origins[:, 1] = grid_y.flatten()
+        ray_origins[:, 2] = height_above_ground
+        ray_directions = torch.zeros_like(ray_origins)
+        ray_directions[..., :] = torch.tensor(list(self.sensor_cfg.height_scanner_direction), device=self.device)
+
+        # Store both origins and directions for height scanner
+        self.ray_origins = ray_origins
+        self.ray_directions = ray_directions
+        
+        # Also store as regular ray_vectors for compatibility (use directions)
+        self.ray_vectors = wp.from_torch(ray_directions.view(-1,3), dtype=wp.vec3)
+        
+        print(f"Height scanner rays initialized: {self.num_horizontal_lines}x{self.num_vertical_lines} = {self.num_horizontal_lines * self.num_vertical_lines} rays")
+        print(f"Grid spans: X=[{grid_x.min():.2f}, {grid_x.max():.2f}], Y=[{grid_y.min():.2f}, {grid_y.max():.2f}]")
+        print(f"Ray origins start at height: {height_above_ground}m above robot base")
+        print(f"Ray offset: X={offset_x:.2f}m, Y={offset_y:.2f}m")
+        
     def _initialize_pattern_rays(self):
         """Initialize ray vectors for pattern-based lidars (Livox, spinning)"""
         rays_theta, rays_phi = self._generate_ray_angles()
@@ -195,8 +287,8 @@ class LidarSensor(BaseSensor):
 
     def update_ray_vectors(self):
         """Update ray vectors for sensors with dynamic patterns"""
-        if self.sensor_cfg.is_simple_grid:
-            return  # Grid-based sensors don't need updates
+        if self.sensor_cfg.is_simple_grid or self.sensor_cfg.is_height_scanner:
+            return  # Grid-based sensors and height scanners don't need updates
         
         if self.sensor_cfg.is_livox_sensor and isinstance(self.ray_generator, LivoxGenerator):
             # Update Livox ray pattern
@@ -240,29 +332,56 @@ class LidarSensor(BaseSensor):
         
         try:
             wp.capture_begin(device=self.device)
-            wp.launch(
-                kernel=LidarWarpKernels.draw_optimized_kernel_pointcloud,
-                dim=(
-                    self.num_envs,
-                    self.num_sensors,
-                    self.num_vertical_lines,
-                    self.num_horizontal_lines,
-                ),
-                inputs=[
-                    self.mesh_ids,
-                    self.lidar_positions,
-                    self.lidar_quat_array,
-                    self.ray_vectors,
-                    self.far_plane,
-                    self.lidar_warp_tensor,
-                    self.local_dist,
-                    self.pointcloud_in_world_frame,
-                ],
-                device=self.device,
-            )
+            
+            if self.sensor_cfg.is_height_scanner:
+                # Use height scanner kernel with different ray origins
+                wp.launch(
+                    kernel=LidarWarpKernels.draw_height_scanner_kernel,
+                    dim=(
+                        self.num_envs,
+                        self.num_sensors,
+                        self.num_vertical_lines,
+                        self.num_horizontal_lines,
+                    ),
+                    inputs=[
+                        self.mesh_ids,
+                        self.lidar_positions,
+                        self.lidar_quat_array,
+                        self.height_scanner_ray_origins,
+                        self.height_scanner_ray_directions,
+                        self.far_plane,
+                        self.lidar_warp_tensor,
+                        self.local_dist,
+                        self.pointcloud_in_world_frame,
+                    ],
+                    device=self.device,
+                )
+            else:
+                # Use regular kernel for other sensor types
+                wp.launch(
+                    kernel=LidarWarpKernels.draw_optimized_kernel_pointcloud,
+                    dim=(
+                        self.num_envs,
+                        self.num_sensors,
+                        self.num_vertical_lines,
+                        self.num_horizontal_lines,
+                    ),
+                    inputs=[
+                        self.mesh_ids,
+                        self.lidar_positions,
+                        self.lidar_quat_array,
+                        self.ray_vectors,
+                        self.far_plane,
+                        self.lidar_warp_tensor,
+                        self.local_dist,
+                        self.pointcloud_in_world_frame,
+                    ],
+                    device=self.device,
+                )
             
             self.graph = wp.capture_end(device=self.device)
-            print(f"Render graph created for {self.sensor_cfg.sensor_type.value} lidar")
+            kernel_type = "height_scanner" if self.sensor_cfg.is_height_scanner else "regular"
+            print(f"Render graph created for {self.sensor_cfg.sensor_type.value} lidar ({kernel_type} kernel)")
             
         finally:
             # Restore original CUDA verification setting
@@ -306,6 +425,19 @@ class LidarSensor(BaseSensor):
         self.local_dist = wp.from_torch(self.lidar_dist_tensor, dtype=wp.float32)
         self.lidar_pixels_tensor = torch.zeros_like(self.lidar_tensor, device=self.device)
         self.lidar_warp_tensor = wp.from_torch(self.lidar_tensor, dtype=wp.vec3)
+        
+        # For height scanner, initialize additional tensors
+        if self.sensor_cfg.is_height_scanner:
+            # Expand ray origins and directions to include env and sensor dimensions
+            ray_origins_expanded = self.ray_origins.unsqueeze(0).unsqueeze(0).expand(
+                self.num_envs, self.num_sensors, -1, -1, -1
+            )
+            ray_directions_expanded = self.ray_directions.unsqueeze(0).unsqueeze(0).expand(
+                self.num_envs, self.num_sensors, -1,-1, -1
+            )
+            
+            self.height_scanner_ray_origins = wp.from_torch(ray_origins_expanded.view( self.num_envs, self.num_sensors, self.num_vertical_lines, self.num_horizontal_lines,-1), dtype=wp.vec3)
+            self.height_scanner_ray_directions = wp.from_torch(ray_directions_expanded.view( self.num_envs, self.num_sensors, self.num_vertical_lines, self.num_horizontal_lines,-1), dtype=wp.vec3)
 
     def capture(self):
         """Capture the render graph if not already created"""
@@ -315,7 +447,6 @@ class LidarSensor(BaseSensor):
     def update(self):
         """Update sensor and return point cloud data"""
         self.sensor_t += self.env_dt
-        
         # Update ray vectors if needed
         if self.sensor_t > self.update_dt:
             self.update_ray_vectors()
@@ -327,26 +458,51 @@ class LidarSensor(BaseSensor):
             wp.capture_launch(self.graph)
         else:
             # Direct kernel launch (for CPU or first-time setup)
-            wp.launch(
-                kernel=LidarWarpKernels.draw_optimized_kernel_pointcloud,
-                dim=(
-                    self.num_envs,
-                    self.num_sensors,
-                    self.num_vertical_lines,
-                    self.num_horizontal_lines,
-                ),
-                inputs=[
-                    self.mesh_ids,
-                    self.lidar_positions,
-                    self.lidar_quat_array,
-                    self.ray_vectors,
-                    self.far_plane,
-                    self.lidar_warp_tensor,
-                    self.local_dist,
-                    self.pointcloud_in_world_frame,
-                ],
-                device=self.device,
-            )
+            if self.sensor_cfg.is_height_scanner:
+                # Use height scanner kernel
+                wp.launch(
+                    kernel=LidarWarpKernels.draw_height_scanner_kernel,
+                    dim=(
+                        self.num_envs,
+                        self.num_sensors,
+                        self.num_vertical_lines,
+                        self.num_horizontal_lines,
+                    ),
+                    inputs=[
+                        self.mesh_ids,
+                        self.lidar_positions,
+                        self.lidar_quat_array,
+                        self.height_scanner_ray_origins,
+                        self.height_scanner_ray_directions,
+                        self.far_plane,
+                        self.lidar_warp_tensor,
+                        self.local_dist,
+                        self.pointcloud_in_world_frame,
+                    ],
+                    device=self.device,
+                )
+            else:
+                # Use regular kernel for other sensor types
+                wp.launch(
+                    kernel=LidarWarpKernels.draw_optimized_kernel_pointcloud,
+                    dim=(
+                        self.num_envs,
+                        self.num_sensors,
+                        self.num_vertical_lines,
+                        self.num_horizontal_lines,
+                    ),
+                    inputs=[
+                        self.mesh_ids,
+                        self.lidar_positions,
+                        self.lidar_quat_array,
+                        self.ray_vectors,
+                        self.far_plane,
+                        self.lidar_warp_tensor,
+                        self.local_dist,
+                        self.pointcloud_in_world_frame,
+                    ],
+                    device=self.device,
+                )
         
         # Convert results back to torch tensors
         self.lidar_pixels_tensor = wp.to_torch(self.lidar_warp_tensor)

@@ -356,7 +356,7 @@ class GenesisG1LidarVisualizer:
             
             # Create lidar config
             sensor_config = LidarConfig(
-                sensor_type=LidarType.HORIZON,  # Choose your sensor type
+                sensor_type=self.sensor_type,  # Choose your sensor type
                 dt=0.02,  # CRITICAL: Must match simulation dt
                 max_range=20.0,
                 update_frequency=1.0/0.02,  # Update every simulation step
@@ -374,9 +374,27 @@ class GenesisG1LidarVisualizer:
                 sensor_config.horizontal_fov_deg_max = 90
                 sensor_config.vertical_fov_deg_min = -30
                 sensor_config.vertical_fov_deg_max = 30
+            elif self.sensor_type == LidarType.HEIGHT_SCANNER:
+                # Configure height scanner parameters
+                sensor_config.height_scanner_size = [8.0, 2.0]  # 4m x 2m grid (reasonable size for terrain mapping)
+                sensor_config.height_scanner_resolution = 0.05   # 20cm spacing (less dense, more reasonable)
+                sensor_config.height_scanner_direction = [0.0, 0.0, -1.0]  # downward rays
+                sensor_config.height_scanner_ordering = "xy"
+                sensor_config.height_scanner_offset = [0.0, 0.0]  # 1m forward offset (scan ahead of robot)
+                sensor_config.height_scanner_height_above_ground = 12.0  # start rays 2m above robot base
+                print(f"Height scanner configured: size={sensor_config.height_scanner_size}, resolution={sensor_config.height_scanner_resolution}")
+                print(f"Height scanner offset: {sensor_config.height_scanner_offset}, height: {sensor_config.height_scanner_height_above_ground}m")
             
             # Create environment data for LidarSensor
             env_data = self._create_lidar_env_data()
+            
+            # Debug: Check environment data
+            print(f"Environment data:")
+            print(f"  sensor_pos_tensor: {env_data['sensor_pos_tensor']}")
+            print(f"  sensor_quat_tensor: {env_data['sensor_quat_tensor']}")
+            print(f"  vertices shape: {env_data['vertices'].shape}")
+            print(f"  faces shape: {env_data['faces'].shape}")
+            print(f"  mesh_ids: {env_data['mesh_ids']}")
             
             # Create LidarSensor with correct parameters
             self.lidar_sensor = LidarSensor(
@@ -399,6 +417,15 @@ class GenesisG1LidarVisualizer:
         """Create environment data for LidarSensor"""
         # Create mock mesh data - in real usage, extract from Genesis scene
         vertices, faces = self._generate_scene_mesh()
+        import trimesh
+        
+        save_stl_path = os.path.join(current_dir, "scene_mesh.stl")
+        # Save vertices and faces to trimesh STL
+        if not os.path.exists(os.path.dirname(save_stl_path)):
+            os.makedirs(os.path.dirname(save_stl_path))
+        # Save vertices and faces to trimesh STL
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+        mesh.export(save_stl_path)
         vertex_tensor = torch.tensor( 
                 vertices,
                 device=self.device,
@@ -448,6 +475,8 @@ class GenesisG1LidarVisualizer:
         faces.extend([[0, 1, 2], [0, 2, 3]])
         face_idx += 4
         
+        #print(f"DEBUG: Ground plane added - vertices: {len(ground_verts)}, faces: 2")
+        
         # Add obstacle meshes (simplified boxes and spheres)
         # Walls
         wall_configs = [
@@ -489,7 +518,15 @@ class GenesisG1LidarVisualizer:
             faces.extend(box_faces)
             face_idx += 8
         
-        return np.array(vertices, dtype=np.float32), np.array(faces, dtype=np.int32)
+        final_vertices = np.array(vertices, dtype=np.float32)
+        final_faces = np.array(faces, dtype=np.int32)
+        
+        # print(f"DEBUG: Final mesh - vertices: {final_vertices.shape}, faces: {final_faces.shape}")
+        # print(f"DEBUG: Vertex range - X: [{final_vertices[:, 0].min():.2f}, {final_vertices[:, 0].max():.2f}]")
+        # print(f"DEBUG: Vertex range - Y: [{final_vertices[:, 1].min():.2f}, {final_vertices[:, 1].max():.2f}]") 
+        # print(f"DEBUG: Vertex range - Z: [{final_vertices[:, 2].min():.2f}, {final_vertices[:, 2].max():.2f}]")
+        
+        return final_vertices, final_faces
     
     def step(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         """Step simulation and update lidar"""
@@ -675,7 +712,7 @@ def main():
     # Test configurations
     configs = [
         {
-            'sensor_type': LidarType.MID360,
+            'sensor_type': LidarType.HEIGHT_SCANNER,
             'device': 'cuda:0' if torch.cuda.is_available() else 'cpu',
             'visualization_mode': 'spheres'
         }
@@ -702,7 +739,7 @@ def main():
             print("Red = close, Blue = far")
             
             # Simulation loop
-            for step in range(300):
+            for step in range(1000):
                 point_cloud, distances = env.step()
                 
                 # Move robot in circle for interesting visualization
@@ -731,6 +768,13 @@ def main():
                     num_points = point_cloud.shape[1] if len(point_cloud.shape) > 1 else len(point_cloud)
                     dist_range = f"[{distances.min().item():.2f}, {distances.max().item():.2f}]"
                     print(f"  Step {step}: {num_points} points, distance range: {dist_range}")
+                    
+                    # Debug: print point cloud shape and sample values
+                    # print(f"    DEBUG: point_cloud.shape = {point_cloud.shape}")
+                    # print(f"    DEBUG: distances.shape = {distances.shape}")
+                    # if len(point_cloud.shape) > 2:
+                    #     print(f"    DEBUG: sample points = {point_cloud[0, :3, :3]}")  # First env, first 3x3 points
+                    #     print(f"    DEBUG: sample distances = {distances[0, :3, :3]}")  # First env, first 3x3 distances
             
             print(f"✓ Demo {i+1} completed!")
             
