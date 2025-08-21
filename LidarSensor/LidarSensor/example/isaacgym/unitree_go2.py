@@ -152,7 +152,7 @@ def farthest_point_sampling(point_cloud, sample_size):
 
 class Go2Env:
     def __init__(self, 
-                 num_envs=5, 
+                 num_envs=1, 
                  num_obstacles=5,
                  publish_ros=True,
                  save_data=False,
@@ -425,7 +425,7 @@ class Go2Env:
         # Apply changes to simulation for all environments at once
         self.gym.set_actor_root_state_tensor(
             self.sim,
-            gymtorch.unwrap_tensor(self.root_states)
+            gymtorch.unwrap_tensor(self.root_states_all)
         )
 
 
@@ -436,7 +436,8 @@ class Go2Env:
 
             
         # create some wrapper tensors for different slices
-        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.root_states_all = gymtorch.wrap_tensor(actor_root_state).view(self.num_envs, -1, 13)
+        self.root_states = self.root_states_all[:, :1, :].view(self.num_envs, 13)
 
 
 
@@ -503,8 +504,16 @@ class Go2Env:
         translation = trimesh.transformations.translation_matrix(transform)
         terrain_mesh.apply_transform(translation)
         
-        vertices = terrain_mesh.vertices
-        triangles = terrain_mesh.faces
+        obstacle_mesh = trimesh.load(f"{RESOURCES_DIR}"+"/scene/meshes/scene_01.obj")
+
+
+        translation = trimesh.transformations.translation_matrix(self.scene_translation)
+        obstacle_mesh.apply_transform(translation)
+
+        combine_mesh = trimesh.util.concatenate([terrain_mesh, obstacle_mesh])
+        
+        vertices = combine_mesh.vertices
+        triangles = combine_mesh.faces
         vertex_tensor = torch.tensor( 
                 vertices,
                 device=self.device,
@@ -648,6 +657,10 @@ class Go2Env:
         self.envs=[]
         self.sensor_handles = []
         
+        self.scene_asset_path = f"scene/scene.urdf"
+        self.obstacle_path_asset_path = f"scene/meshes/scene_01.obj"
+        scene_asset = self.gym.load_asset(self.sim,sensor_asset_root,self.scene_asset_path,asset_options)
+
         for i in range(self.num_envs):
             
             pos = self.env_origins[i].clone()
@@ -661,6 +674,15 @@ class Go2Env:
             pos[2] = 1.0
             start_pose.p = gymapi.Vec3(*(pos))
             sensor_hanle = self.gym.create_actor(env, sensor_asset, start_pose, "sensor",i, 0, 1)
+            
+            scene_start_pose_obj = gymapi.Transform()
+            self.scene_translation = np.array([8,8,0])
+            scene_start_pose_obj.p = gymapi.Vec3(*self.scene_translation)
+            scene_handle = self.gym.create_actor(env, scene_asset, scene_start_pose_obj, 'obstacle', i, 0, 1)
+            
+            
+            
+            
             self.sensor_handles.append(sensor_hanle)
 
                           
@@ -1025,7 +1047,7 @@ class Go2Env:
         env_ids_int32 = torch.tensor([env_idx], dtype=torch.int32, device=self.device)
         self.gym.set_actor_root_state_tensor_indexed(
             self.sim,
-            gymtorch.unwrap_tensor(self.root_states),
+            gymtorch.unwrap_tensor(self.root_states_all),
             gymtorch.unwrap_tensor(env_ids_int32), 
             len(env_ids_int32)
         )
