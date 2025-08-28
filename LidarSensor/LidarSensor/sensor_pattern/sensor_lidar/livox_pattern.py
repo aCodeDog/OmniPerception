@@ -276,7 +276,7 @@ if __name__ == "__main__":
     # Livox Mini/Mid-360
     st = time.time()
     for _ in range(test_times):
-        ray_theta, ray_phi = generate_minicf_lidar(t=t, is_360lidar=True)
+        ray_theta, ray_phi = generate_minicf_lidar(t=t, is_360lidar=True,point_num=24000)
     et = time.time()
     print(f"Livox Mini/Mid-360 Pattern , Point Num: {len(ray_theta)}, Time: {1e3*(et - st)/test_times:.3f} ms")
     visualize_pattern(ray_theta, ray_phi, "Livox Mini/Mid-360 Pattern")

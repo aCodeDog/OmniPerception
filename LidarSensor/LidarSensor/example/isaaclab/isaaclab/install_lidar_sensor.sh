@@ -40,8 +40,10 @@ echo "Copying pattern files..."
 cp "$CURRENT_DIR/sensors/ray_caster/patterns/patterns.py" "$ISAACLAB_PATH/source/isaaclab/isaaclab/sensors/ray_caster/patterns/"
 cp "$CURRENT_DIR/sensors/ray_caster/patterns/patterns_cfg.py" "$ISAACLAB_PATH/source/isaaclab/isaaclab/sensors/ray_caster/patterns/"
 
+
 echo "Copying raycaster files..."
 cp "$CURRENT_DIR/sensors/ray_caster/ray_caster.py" "$ISAACLAB_PATH/source/isaaclab/isaaclab/sensors/ray_caster/"
+cp "$CURRENT_DIR/sensors/ray_caster/ray_caster_camera.py" "$ISAACLAB_PATH/source/isaaclab/isaaclab/sensors/ray_caster/"
 cp "$CURRENT_DIR/sensors/ray_caster/ray_caster_cfg.py" "$ISAACLAB_PATH/source/isaaclab/isaaclab/sensors/ray_caster/"
 # Copy scan patterns from unified location for local fallback
 echo "Copying scan pattern files from unified location..."
