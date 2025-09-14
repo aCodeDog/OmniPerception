@@ -241,8 +241,8 @@ def downsample_spherical_points_vectorized(sphere_points, num_theta_bins=10, num
     env_indices = torch.arange(num_envs, device=device).view(-1, 1).expand(-1, num_points)
     
     # Flatten tensors for scatter operation
-    flat_bin_indices = bin_indices.view(-1)            # [num_envs * num_points]
-    flat_env_indices = env_indices.view(-1)            # [num_envs * num_points]
+    flat_bin_indices = bin_indices.reshape(-1)            # [num_envs * num_points]
+    flat_env_indices = env_indices.reshape(-1)            # [num_envs * num_points]
     flat_r = r.view(-1)                               # [num_envs * num_points]
     
     # Create 2D indices for scatter operation (env_idx, bin_idx)
@@ -1489,7 +1489,7 @@ def print_lidar_pos():
 if __name__ == "__main__":
     # Create and run a simple lidar environment
     env = G1Env(
-        num_envs=1,
+        num_envs=4,
         num_obstacles=10
     )
     

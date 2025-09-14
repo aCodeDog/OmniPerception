@@ -443,7 +443,59 @@ class LidarSensor(BaseSensor):
         """Capture the render graph if not already created"""
         if self.graph is None:
             self.create_render_graph_pointcloud()
+    def tensor_indices_to_slice(idx: torch.Tensor):
+        # expects 1-D int tensor
+        idx = idx.to(dtype=torch.long)
+        if idx.numel() == 0:
+            return slice(0, 0)
+        sorted_idx, _ = torch.sort(idx)
+        first = int(sorted_idx[0].item())
+        last = int(sorted_idx[-1].item())
+        if last - first + 1 == sorted_idx.numel():
+            return slice(first, last + 1)  # stop is exclusive
+        return None  # not contiguous
+    def reset(self, env_ids=None, value=0.0):
+        """Reset selected environments (or all) in lidar_warp_tensor"""
+        if env_ids is None:
+            self.lidar_warp_tensor.fill_(value)
+            return
 
+        # Accept single int
+        if isinstance(env_ids, int):
+            self.lidar_warp_tensor[env_ids].fill_(value)
+            return
+
+        # Accept slice directly
+        if isinstance(env_ids, slice):
+            self.lidar_warp_tensor[env_ids].fill_(value)
+            return
+
+        # Torch tensor or list/tuple of ints
+        if isinstance(env_ids, torch.Tensor):
+            if env_ids.numel() == 0:
+                return
+            sl = self.tensor_indices_to_slice(env_ids)
+            if sl is not None:
+                self.lidar_warp_tensor[sl].fill_(value)
+            else:
+                # Fallback: per-index fill
+                for i in env_ids.tolist():
+                    self.lidar_warp_tensor[int(i)].fill_(value)
+            return
+
+        if isinstance(env_ids, (list, tuple)):
+            if len(env_ids) == 0:
+                return
+            t = torch.tensor(env_ids, dtype=torch.long)
+            sl = self.tensor_indices_to_slice(t)
+            if sl is not None:
+                self.lidar_warp_tensor[sl].fill_(value)
+            else:
+                for i in env_ids:
+                    self.lidar_warp_tensor[int(i)].fill_(value)
+            return
+
+        raise TypeError(f"Unsupported env_ids type: {type(env_ids)}")
     def update(self):
         """Update sensor and return point cloud data"""
         self.sensor_t += self.env_dt
