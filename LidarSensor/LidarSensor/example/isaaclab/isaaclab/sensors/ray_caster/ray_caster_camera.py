@@ -260,6 +260,8 @@ class RayCasterCamera(RayCaster):
         self._frame[env_ids] += 1
         if self.combined_mesh is not None:
             self._update_combined_mesh_efficiently()
+        if self.env_dynamic_mesh is not None:
+            self._update_env_dynamic_mesh_efficiently()
         # compute poses from current view
         pos_w, quat_w = self._compute_camera_world_poses(env_ids)
         # update the data
@@ -283,16 +285,40 @@ class RayCasterCamera(RayCaster):
         else:
             mesh_to_use = self.meshes[self.cfg.mesh_prim_paths[0]]
 
-        self.ray_hits_w, ray_depth, ray_normal, _ = raycast_mesh(
+
+        _, dist1, ray_normal, _ = raycast_mesh(
             ray_starts_w,
             ray_directions_w,
+            max_dist=self.cfg.max_distance,
             mesh=mesh_to_use,
-            max_dist=1e6,
-            return_distance=any(
-                [name in self.cfg.data_types for name in ["distance_to_image_plane", "distance_to_camera"]]
-            ),
-            return_normal="normals" in self.cfg.data_types,
+            return_distance=True,
         )
+
+        if self.env_dynamic_mesh is not None:
+            _, dist2, _, _ = raycast_mesh(
+                ray_starts_w,
+                ray_directions_w,
+                max_dist=self.cfg.max_distance,
+                mesh=self.env_dynamic_mesh,
+                return_distance=True,
+            )
+            final_dist = torch.minimum(dist1, dist2)
+        else:
+            final_dist = dist1
+        final_hits = ray_starts_w + final_dist.unsqueeze(-1) * ray_directions_w
+        ray_depth = final_dist
+        self.ray_hits_w = final_hits
+        
+        # self.ray_hits_w, ray_depth, ray_normal, _ = raycast_mesh(
+        #     ray_starts_w,
+        #     ray_directions_w,
+        #     mesh=mesh_to_use,
+        #     max_dist=1e6,
+        #     return_distance=any(
+        #         [name in self.cfg.data_types for name in ["distance_to_image_plane", "distance_to_camera"]]
+        #     ),
+        #     return_normal="normals" in self.cfg.data_types,
+        # )
         # update output buffers
         if "distance_to_image_plane" in self.cfg.data_types:
             # note: data is in camera frame so we only take the first component (z-axis of camera frame)

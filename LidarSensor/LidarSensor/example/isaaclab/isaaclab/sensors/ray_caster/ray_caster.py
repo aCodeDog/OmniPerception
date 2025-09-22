@@ -81,6 +81,13 @@ class RayCaster(SensorBase):
         self.vertex_counts_per_instance: torch.Tensor | None = None
         self.mesh_instance_indices: torch.Tensor | None = None
 
+        # Environment dynamic meshes (per-environment prims like Cube/Sphere)
+        self.all_env_dynamic_mesh_view: XFormPrim | None = None
+        self.env_dynamic_mesh: wp.Mesh | None = None
+        self.env_base_points: torch.Tensor | None = None
+        self.env_vertex_counts_per_instance: torch.Tensor | None = None
+        self.env_mesh_instance_indices: torch.Tensor | None = None
+
     def __str__(self) -> str:
         """Returns: A string containing information about the instance."""
         return (
@@ -164,6 +171,8 @@ class RayCaster(SensorBase):
         self._initialize_enhanced_warp_meshes()
         # initialize the ray start and directions
         self._initialize_rays_impl()
+        # initialize dynamic environment meshes if configured
+        self._initialize_env_dynamic_meshes()
 
     def _initialize_warp_meshes(self):
         # Enhanced to support multiple geometry types by combining them into one
@@ -261,6 +270,184 @@ class RayCaster(SensorBase):
         # Now add dynamic mesh support if meshes were found
         if len(self.meshes) > 0:
             self._setup_dynamic_mesh_system()
+
+    def _resolve_env_regex_ns(self) -> str:
+        """Resolve environment regex namespace from sensor prim path.
+
+        Returns the substring ending with '/env_.*' if present, otherwise '/World/envs/env_.*'.
+        """
+        try:
+            result = re.search(r"(.*/envs/env_\\\.\*)", self.cfg.prim_path)
+            if result:
+                return result.group(1)
+        except Exception:
+            pass
+        return "/World/envs/env_.*"
+
+    def _initialize_env_dynamic_meshes(self):
+        """Initialize the env dynamic mesh system using parent XFormPrims for transforms.
+
+        New logic (requested):
+        1. Use the configured `dynamic_env_mesh_prim_paths` (each points to a mesh prim) and resolve them for `env_0` only.
+        2. For each such mesh prim (env_0 instance), obtain its parent XFormPrim path. The parent will be used for world pose updates.
+        3. Replace the `env_0` portion with the regex namespace (e.g. `env_.*`) to build pattern parent paths and create a single XFormPrim view.
+        4. Extract geometry ONCE per pattern from the env_0 mesh prim, transform vertices into the parent frame (apply relative transform mesh->parent),
+           then replicate that geometry across all environments while building a combined warp mesh.
+        5. Maintain view ordering assumption: pattern0 [env0..envN], pattern1 [env0..envN], ... so the existing efficient update code works unchanged.
+        """
+        try:
+            # Quick exits
+            if not hasattr(self.cfg, "dynamic_env_mesh_prim_paths"):
+                return
+            if not self.cfg.dynamic_env_mesh_prim_paths:
+                return
+
+            from pxr import UsdGeom
+
+            env_regex_ns = self._resolve_env_regex_ns()  # e.g. /World/envs/env_.*
+            # Derive a concrete env_0 namespace to sample representative meshes
+            # Handle both 'env_.*' and escaped variants 'env_\.*'
+            env0_ns = re.sub(r"env_\\\.\*", "env_0", env_regex_ns)
+            env0_ns = env0_ns.replace("env_.*", "env_0")
+
+            parent_pattern_paths: list[str] = []  # parent paths with regex namespace
+            pattern_points: list[np.ndarray] = []  # geometry (points) in parent frame for each pattern
+            pattern_indices: list[np.ndarray] = []  # flattened triangle indices for each pattern
+
+            # Helper: convert mesh prim geometry into parent frame
+            def _mesh_vertices_in_parent_frame(mesh_prim) -> tuple[np.ndarray, np.ndarray] | None:
+                mesh_data = self._extract_mesh_data_from_prim_dynamic(mesh_prim)
+                if mesh_data is None:
+                    return None
+                points, indices = mesh_data  # points in mesh local frame
+                try:
+                    mesh_xf = UsdGeom.Xformable(mesh_prim)
+                    parent_prim = mesh_prim.GetParent()
+                    parent_xf = UsdGeom.Xformable(parent_prim)
+                    mesh_world = np.array(mesh_xf.ComputeLocalToWorldTransform(0.0))  # 4x4
+                    parent_world = np.array(parent_xf.ComputeLocalToWorldTransform(0.0))
+                    parent_world_inv = np.linalg.inv(parent_world)
+                    rel = parent_world_inv @ mesh_world  # parent->mesh
+                    # Apply relative transform to mesh-local points to express them in parent frame
+                    rot = rel[:3, :3]
+                    trans = rel[:3, 3]
+                    points_parent = points @ rot.T + trans
+                    return points_parent.astype(np.float32), indices.astype(np.int32)
+                except Exception as e:
+                    omni.log.warn(f"Failed relative transform for mesh {mesh_prim.GetPath()}: {e}")
+                    return points.astype(np.float32), indices.astype(np.int32)
+
+            # 1 & 2. Resolve each dynamic path for env_0, fetch mesh prim + parent
+            # Access stage directly for deterministic prim retrieval
+            stage = omni.usd.get_context().get_stage()
+            supported_geom_types = {"Mesh", "Sphere", "Cube", "Cylinder", "Capsule", "Cone", "Plane"}
+
+            for raw_path in self.cfg.dynamic_env_mesh_prim_paths:
+                # Build env_0 concrete path from pattern
+                try:
+                    mesh_path_env0 = raw_path.format(ENV_REGEX_NS=env0_ns)
+                except Exception:
+                    mesh_path_env0 = raw_path.replace(env_regex_ns, env0_ns)
+
+                mesh_prim = stage.GetPrimAtPath(mesh_path_env0)
+                if not mesh_prim or not mesh_prim.IsValid():
+                    omni.log.warn(f"Env0 mesh prim path not found: {mesh_path_env0} (skipping pattern)")
+                    continue
+
+                geom_type = mesh_prim.GetTypeName()
+                if geom_type not in supported_geom_types:
+                    omni.log.warn(
+                        f"Env0 mesh prim at {mesh_path_env0} has unsupported type '{geom_type}' (skipping pattern)"
+                    )
+                    continue
+
+                parent_prim = mesh_prim.GetParent()
+                if parent_prim is None or not parent_prim.IsValid():
+                    omni.log.warn(f"Parent prim invalid for mesh {mesh_path_env0} (skipping pattern)")
+                    continue
+
+                parent_env0_path = parent_prim.GetPath().pathString
+                parent_pattern_path = parent_env0_path.replace(env0_ns, env_regex_ns)
+                parent_pattern_paths.append(parent_pattern_path)
+
+                mesh_parent_frame = _mesh_vertices_in_parent_frame(mesh_prim)
+                if mesh_parent_frame is None:
+                    omni.log.warn(f"Failed to extract geometry (parent frame) for {mesh_path_env0}")
+                    parent_pattern_paths.pop()
+                    continue
+                pts_parent, idx_parent = mesh_parent_frame
+                pattern_points.append(pts_parent)
+                pattern_indices.append(idx_parent)
+
+            if not parent_pattern_paths:
+                omni.log.warn("No valid dynamic env mesh parent patterns resolved.")
+                return
+
+            # 5. Create XFormPrim view over parent patterns (expands env instances)
+            self.all_env_dynamic_mesh_view = XFormPrim(parent_pattern_paths, reset_xform_properties=False)
+            prim_paths_expanded = list(self.all_env_dynamic_mesh_view.prim_paths)
+            if len(prim_paths_expanded) == 0:
+                omni.log.warn("Parent pattern XFormPrim expansion yielded no prim paths.")
+                self.all_env_dynamic_mesh_view = None
+                return
+
+            num_patterns = len(parent_pattern_paths)
+            if len(prim_paths_expanded) % num_patterns != 0:
+                omni.log.warn(
+                    "Expanded parent prim count not divisible by number of patterns. Aborting env dynamic mesh setup."
+                )
+                self.all_env_dynamic_mesh_view = None
+                return
+            num_envs = len(prim_paths_expanded) // num_patterns
+
+            # Replicate each pattern's geometry across environments; maintain ordering assumption
+            combined_points: list[np.ndarray] = []
+            combined_indices: list[np.ndarray] = []
+            vertex_counts: list[int] = []
+            vertex_offset = 0
+            total_instances = 0
+
+            for p in range(num_patterns):
+                base_points = pattern_points[p]
+                base_indices = pattern_indices[p]
+                for _env in range(num_envs):
+                    offset_indices = base_indices + vertex_offset
+                    combined_points.append(base_points)
+                    combined_indices.append(offset_indices)
+                    vertex_counts.append(len(base_points))
+                    vertex_offset += len(base_points)
+                    total_instances += 1
+
+            if total_instances == 0:
+                omni.log.warn("After replication no env dynamic mesh instances were assembled.")
+                self.all_env_dynamic_mesh_view = None
+                return
+
+            final_points = np.vstack(combined_points)
+            final_indices = np.concatenate(combined_indices)
+
+            # Build warp mesh and cache tensors for fast updates
+            self.env_dynamic_mesh = convert_to_warp_mesh(final_points, final_indices, device=self.device)
+            self.env_base_points = torch.tensor(final_points, device=self.device, dtype=torch.float32)
+            self.env_vertex_counts_per_instance = torch.tensor(vertex_counts, device=self.device, dtype=torch.int32)
+            self.env_mesh_instance_indices = torch.arange(total_instances, device=self.device, dtype=torch.int32)
+
+            omni.log.info(
+                "Initialized env dynamic mesh (parent-based): patterns=%d, envs=%d, instances=%d, vertices=%d, faces=%d" % (
+                    num_patterns,
+                    num_envs,
+                    total_instances,
+                    len(final_points),
+                    len(final_indices) // 3,
+                )
+            )
+        except Exception as e:
+            omni.log.error(f"Failed to initialize env dynamic meshes (parent-based): {e}")
+            self.all_env_dynamic_mesh_view = None
+            self.env_dynamic_mesh = None
+            self.env_base_points = None
+            self.env_vertex_counts_per_instance = None
+            self.env_mesh_instance_indices = None
     
     def _setup_dynamic_mesh_system(self):
         """Set up the dynamic mesh tracking system for efficient updates."""
@@ -396,6 +583,8 @@ class RayCaster(SensorBase):
         # Update dynamic meshes if available
         if self.combined_mesh is not None:
             self._update_combined_mesh_efficiently()
+        if self.env_dynamic_mesh is not None:
+            self._update_env_dynamic_mesh_efficiently()
 
         # ray cast based on the sensor poses
         if self.cfg.ray_alignment == "world":
@@ -429,19 +618,36 @@ class RayCaster(SensorBase):
         else:
             raise RuntimeError(f"Unsupported ray_alignment type: {self.cfg.ray_alignment}.")
 
-        # ray cast and store the hits
+        # ray cast and store the hits (dual raycast with distance merge)
         # Use combined mesh if available for dynamic support, otherwise use original mesh
         if self.combined_mesh is not None:
             mesh_to_use = self.combined_mesh
         else:
             mesh_to_use = self.meshes[self.cfg.mesh_prim_paths[0]]
-            
-        self._data.ray_hits_w[env_ids] = raycast_mesh(
+
+        _, dist1, _, _ = raycast_mesh(
             ray_starts_w,
             ray_directions_w,
             max_dist=self.cfg.max_distance,
             mesh=mesh_to_use,
-        )[0]
+            return_distance=True,
+        )
+
+        if self.env_dynamic_mesh is not None:
+            _, dist2, _, _ = raycast_mesh(
+                ray_starts_w,
+                ray_directions_w,
+                max_dist=self.cfg.max_distance,
+                mesh=self.env_dynamic_mesh,
+                return_distance=True,
+            )
+            final_dist = torch.minimum(dist1, dist2)
+        else:
+            final_dist = dist1
+
+        # Compute final hit points. For missed rays, final_dist stays inf and the result becomes inf as well.
+        final_hits = ray_starts_w + final_dist.unsqueeze(-1) * ray_directions_w
+        self._data.ray_hits_w[env_ids] = final_hits
 
         # apply vertical drift to ray starting position in ray caster frame
         self._data.ray_hits_w[env_ids, :, 2] += self.ray_cast_drift[env_ids, 2].unsqueeze(-1)
@@ -477,6 +683,8 @@ class RayCaster(SensorBase):
         self._view = None
         # Invalidate dynamic mesh view as well
         self.all_mesh_view = None
+        # Invalidate environment dynamic mesh view as well
+        self.all_env_dynamic_mesh_view = None
 
     def _create_trimesh_from_usd_primitive(self, geom_prim, geom_type):
         """Create a trimesh object from USD primitive parameters.
@@ -955,3 +1163,52 @@ class RayCaster(SensorBase):
             
         except Exception as e:
             omni.log.warn(f"Failed to update combined mesh efficiently: {str(e)}")
+
+    def _update_env_dynamic_mesh_efficiently(self):
+        """Efficiently update the env dynamic mesh using vectorized operations."""
+        if (
+            self.all_env_dynamic_mesh_view is None
+            or self.env_dynamic_mesh is None
+            or self.env_mesh_instance_indices is None
+            or self.env_vertex_counts_per_instance is None
+            or self.env_base_points is None
+        ):
+            return
+
+        try:
+            num_instances = len(self.env_mesh_instance_indices)
+            current_poses, current_quats = self.all_env_dynamic_mesh_view.get_world_poses(
+                torch.arange(num_instances, device=self.device)
+            )
+
+            if isinstance(current_poses, np.ndarray):
+                current_poses = torch.from_numpy(current_poses).to(device=self.device)
+            if isinstance(current_quats, np.ndarray):
+                current_quats = torch.from_numpy(current_quats).to(device=self.device)
+
+            expanded_positions = torch.repeat_interleave(
+                current_poses, self.env_vertex_counts_per_instance.long(), dim=0
+            )
+            expanded_quats = torch.repeat_interleave(
+                current_quats, self.env_vertex_counts_per_instance.long(), dim=0
+            )
+
+            transformed_points = quat_apply(expanded_quats, self.env_base_points) + expanded_positions
+
+            updated_points_wp = wp.from_torch(transformed_points, dtype=wp.vec3)
+            self.env_dynamic_mesh.points = updated_points_wp
+            self.env_dynamic_mesh.refit()
+
+        except Exception as e:
+            omni.log.warn(f"Failed to update env dynamic mesh efficiently: {str(e)}")
+            
+            
+            
+#stage = omni.usd.get_context().get_stage()
+
+#mesh_prim = stage.GetPrimAtPath("/World/envs/env_0/Robot/LF_HIP/visuals/mesh_0")
+#mesh_prim.GetTypeName() == "Mesh"? 
+#Mesh = UsdGeom.Mesh.Get(stage,mesh_prim.GetPath().pathString)
+#mesh_geom = UsdGeom.Mesh(mesh_prim)
+#mesh_prim.GetChildren()
+#mesh_prim.GetParent()

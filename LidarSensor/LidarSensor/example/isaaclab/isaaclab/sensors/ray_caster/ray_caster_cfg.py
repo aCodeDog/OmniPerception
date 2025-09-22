@@ -86,3 +86,14 @@ class RayCasterCfg(SensorBaseCfg):
     Note:
         This attribute is only used when debug visualization is enabled.
     """
+
+    # Dynamic environment mesh support
+    dynamic_env_mesh_prim_paths: list[str] = []
+    """List of prim path expressions for dynamic environment meshes.
+
+    These paths may contain the placeholder ``{ENV_REGEX_NS}``, which will be replaced with the
+    environment namespace regex (e.g., ``/World/envs/env_.*``) when the sensor initializes.
+
+    Examples:
+        ["{ENV_REGEX_NS}/Cube", "{ENV_REGEX_NS}/Sphere"]
+    """

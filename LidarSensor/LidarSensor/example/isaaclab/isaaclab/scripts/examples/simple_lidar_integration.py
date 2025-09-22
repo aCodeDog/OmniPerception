@@ -124,7 +124,19 @@ class MySceneCfg(InteractiveSceneCfg):
                 sensor_type="mid360",
                 samples=24000,  # Reduced for better performance with 1024 envs
             ),
-            mesh_prim_paths=["/World/ground","/World/static"],
+            mesh_prim_paths=["/World/ground","/World/static"], #this is for global dynamic and static mesh
+            # You can also specify specific prim paths for dynamic objects if needed
+            
+                
+            #this is for local dynamic mesh,other env sensor will not consider this
+            dynamic_env_mesh_prim_paths=["{ENV_REGEX_NS}/Cube/geometry/mesh","{ENV_REGEX_NS}/Sphere/geometry/mesh",
+                                         "{ENV_REGEX_NS}/Robot/LF_HIP/visuals/mesh_0",
+                                         "{ENV_REGEX_NS}/Robot/LF_SHANK/visuals/mesh_0",
+                                         "{ENV_REGEX_NS}/Robot/LF_THIGH/visuals/mesh_0",
+                                         "{ENV_REGEX_NS}/Robot/LF_FOOT/visuals/mesh_0",
+                                         "{ENV_REGEX_NS}/Robot/RF_HIP/visuals/mesh_0",
+                                         "{ENV_REGEX_NS}/Robot/LF_HIP/visuals/mesh_1",
+                                         ],
             max_distance=20.0,
             min_range=0.2,
             return_pointcloud=False,  # Disable pointcloud for performance
