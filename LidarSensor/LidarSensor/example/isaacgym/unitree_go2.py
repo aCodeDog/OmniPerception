@@ -153,15 +153,17 @@ def farthest_point_sampling(point_cloud, sample_size):
 class Go2Env:
     def __init__(self, 
                  num_envs=1, 
-                 num_obstacles=5,
+                 num_obstacles=2,  # Changed to 2 for the dynamic pillars
                  publish_ros=True,
                  save_data=False,
-                 save_interval=0.1  # 每1秒保存一次数据
+                 save_interval=0.1,  # 每1秒保存一次数据
+                 enable_dynamic_obstacles=True  # Enable dynamic obstacle support
                 ):
         """Initialize a minimal lidar sensor environment."""
         self.gym = gymapi.acquire_gym()
         self.num_envs = num_envs
         self.num_obstacles = num_obstacles
+        self.enable_dynamic_obstacles = enable_dynamic_obstacles
         self.headless = args.headless
         self.show_viewer = not args.headless
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -176,6 +178,11 @@ class Go2Env:
         self.save_interval = save_interval
         self.save_time = 0
         self.last_save_time = 0
+        
+        # Dynamic obstacle parameters
+        self.obstacle_move_t = 0
+        self.obstacle_k = 5 * 0.5 / np.pi  # Movement velocity factor
+        
         wp.init()
         if self.save_data:
             # 创建保存数据的目录
@@ -436,10 +443,30 @@ class Go2Env:
 
             
         # create some wrapper tensors for different slices
-        self.root_states_all = gymtorch.wrap_tensor(actor_root_state).view(self.num_envs, -1, 13)
-        self.root_states = self.root_states_all[:, :1, :].view(self.num_envs, 13)
-
-
+        # Account for dynamic obstacles: robot + obstacles per env
+        if self.enable_dynamic_obstacles:
+            self.root_states_all = gymtorch.wrap_tensor(actor_root_state)
+            self.vec_root_tensor = self.root_states_all.view(
+                self.num_envs, 1 + self.num_obstacles, -1
+            )
+            # Robot states (every (num_obstacles+1)-th actor)
+            self.root_states = self.root_states_all[0::(self.num_obstacles+1)]
+            
+            # Obstacle states
+            self.total_obstacles_num = self.num_envs * self.num_obstacles
+            self.random_obstacles_offsets = (torch.rand(self.total_obstacles_num, 3, device=self.device) - 0.5) * 6.28
+            
+            self.root_states_obj = [self.root_states_all[_obj::(self.num_obstacles+1)] for _obj in range(1, 1+self.num_obstacles)]
+            
+            # Get obstacle root states in proper shape
+            obstacle_num = self.num_obstacles
+            self.obstacle_root_states = self.vec_root_tensor[:, 1:obstacle_num+1, :]
+            self.obstacle_states_order = self.obstacle_root_states.clone().reshape(self.num_envs*obstacle_num, -1)
+            self.init_obstacle_root_states = self.obstacle_states_order.clone()
+            self.init_states_translation = self.init_obstacle_root_states[:, :3]
+        else:
+            self.root_states_all = gymtorch.wrap_tensor(actor_root_state).view(self.num_envs, -1, 13)
+            self.root_states = self.root_states_all[:, :1, :].view(self.num_envs, 13)
 
         self.base_quat = self.root_states[:, 3:7]
 
@@ -493,10 +520,10 @@ class Go2Env:
         return points
 
     def create_warp_env(self):
+        """Create warp mesh environment with dynamic obstacles support"""
         
-        
+        # Load terrain mesh
         terrain_mesh = trimesh.Trimesh(vertices=self.terrain.vertices, faces=self.terrain.triangles)
-        #save terrain mesh
         transform = np.zeros((3,))
         transform[0] = -self.terrain_cfg.border_size 
         transform[1] = -self.terrain_cfg.border_size
@@ -504,13 +531,35 @@ class Go2Env:
         translation = trimesh.transformations.translation_matrix(transform)
         terrain_mesh.apply_transform(translation)
         
-        obstacle_mesh = trimesh.load(f"{RESOURCES_DIR}"+"/scene/meshes/scene_01.obj")
-
-
-        translation = trimesh.transformations.translation_matrix(self.scene_translation)
-        obstacle_mesh.apply_transform(translation)
-
-        combine_mesh = trimesh.util.concatenate([terrain_mesh, obstacle_mesh])
+        meshes_to_combine = [terrain_mesh]
+        
+        # Add dynamic obstacles if enabled
+        if self.enable_dynamic_obstacles and hasattr(self, 'obstacle_meshes_list'):
+            self.obstacle_mesh_per_env = []
+            self.single_num_vertices_list = []
+            
+            for i in range(len(self.obstacle_meshes_list)):
+                mesh_path = self.obstacle_meshes_list[i]
+                transformation = self.obstacle_transformations_list[i]
+                
+                # Load obstacle mesh
+                obstacle_mesh = trimesh.load(mesh_path)
+                
+                # Apply transformation
+                translation_matrix = trimesh.transformations.translation_matrix(transformation.cpu().numpy())
+                obstacle_mesh.apply_transform(translation_matrix)
+                
+                self.obstacle_mesh_per_env.append(obstacle_mesh)
+                self.single_num_vertices_list.append(len(obstacle_mesh.vertices))
+                meshes_to_combine.append(obstacle_mesh)
+            
+            # Store info for mesh updates
+            self.single_num_vertices = torch.tensor(self.single_num_vertices_list, device=self.device)
+            self.all_obstacle_num_vertices = torch.sum(self.single_num_vertices)
+            self.expanded_init_translation = self.init_states_translation.repeat_interleave(self.single_num_vertices, dim=0)
+        
+        # Combine all meshes
+        combine_mesh = trimesh.util.concatenate(meshes_to_combine)
         
         vertices = combine_mesh.vertices
         triangles = combine_mesh.faces
@@ -521,13 +570,15 @@ class Go2Env:
                 dtype=torch.float32,
             )
         
-        #if none type in vertex_tensor
-        if vertex_tensor.any() is None:
-            print("vertex_tensor is None")
-        vertex_vec3_array = wp.from_torch(vertex_tensor,dtype=wp.vec3)        
-        faces_wp_int32_array = wp.from_numpy(triangles.flatten(), dtype=wp.int32,device=self.device)
+        vertex_vec3_array = wp.from_torch(vertex_tensor, dtype=wp.vec3)        
+        faces_wp_int32_array = wp.from_numpy(triangles.flatten(), dtype=wp.int32, device=self.device)
                 
-        self.wp_meshes =  wp.Mesh(points=vertex_vec3_array,indices=faces_wp_int32_array)
+        self.wp_meshes = wp.Mesh(points=vertex_vec3_array, indices=faces_wp_int32_array)
+        
+        # Store initial points for updates
+        if self.enable_dynamic_obstacles:
+            old_points = wp.to_torch(self.wp_meshes.points)
+            self.init_points = old_points.clone()
         
         self.mesh_ids = self.mesh_ids_array = wp.array([self.wp_meshes.id], dtype=wp.uint64)
         
@@ -622,68 +673,91 @@ class Go2Env:
 
 
     def create_env(self):
-        """Create random obstacles in the environment using URDF files."""
+        """Create environment with robot and dynamic obstacles."""
         self.obstacles = []
         
-
         sensor_asset_root = f"{RESOURCES_DIR}"
         sensor_asset_file = "robots/go2/urdf/go2.urdf"
         asset_options = gymapi.AssetOptions()
-        
         
         asset_options.flip_visual_attachments = False
         asset_options.fix_base_link = True
         asset_options.disable_gravity = True
 
-        sensor_asset = self.gym.load_asset(self.sim, sensor_asset_root, sensor_asset_file,asset_options)
+        sensor_asset = self.gym.load_asset(self.sim, sensor_asset_root, sensor_asset_file, asset_options)
 
+        # Load dynamic obstacle assets if enabled
+        if self.enable_dynamic_obstacles:
+            obstacle_asset_root = "/home/zifanw/rl_robot/OmniPerception"
+            obstacle_asset_file = "resources/terrain/plane/pillar.urdf"
+            obstacle_mesh_file = "resources/terrain/plane/pillar_08x08x3.stl"
+            
+            obstacle_options = gymapi.AssetOptions()
+            obstacle_options.replace_cylinder_with_capsule = False
+            obstacle_options.flip_visual_attachments = False
+            obstacle_options.fix_base_link = False
+            obstacle_options.density = 1000000.
+            obstacle_options.angular_damping = 1000000.
+            obstacle_options.linear_damping = 1000000.
+            obstacle_options.max_angular_velocity = 0.001
+            obstacle_options.max_linear_velocity = 0.001
+            obstacle_options.disable_gravity = True
+            
+            obstacle_asset = self.gym.load_asset(self.sim, obstacle_asset_root, obstacle_asset_file, obstacle_options)
         
-        # Create obstacles
+        # Create obstacles tracking lists
         self.object_handles = []
-        self.warp_meshes_trasnformation =[]
-        self.warp_meshes_list = []
-    
+        self.obstacle_meshes_list = []
+        self.obstacle_transformations_list = []
         
-        self.warp_mesh_per_env = []
-        self.warp_mesh_id_list = []
-        
-        
-        #self.num_envs = args.num_envs
+        # Get environment origins
         self._get_env_origins()
         num_per_row = int(sqrt(self.num_envs))
         env_spacing = 0
         env_lower = gymapi.Vec3(-env_spacing, 0.0, -env_spacing)
         env_upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
-        self.envs=[]
+        self.envs = []
         self.sensor_handles = []
-        
-        self.scene_asset_path = f"scene/scene.urdf"
-        self.obstacle_path_asset_path = f"scene/meshes/scene_01.obj"
-        scene_asset = self.gym.load_asset(self.sim,sensor_asset_root,self.scene_asset_path,asset_options)
 
         for i in range(self.num_envs):
-            
             pos = self.env_origins[i].clone()
             
-            env = self.gym.create_env(self.sim,env_lower, env_upper, num_per_row)
+            env = self.gym.create_env(self.sim, env_lower, env_upper, num_per_row)
             self.envs.append(env)
-            # create sensor pose
-
+            
+            # Create sensor pose
             start_pose = gymapi.Transform()
-            start_pose.r  = gymapi.Quat(0, 0, 0, 1)
+            start_pose.r = gymapi.Quat(0, 0, 0, 1)
             pos[2] = 1.0
             start_pose.p = gymapi.Vec3(*(pos))
-            sensor_hanle = self.gym.create_actor(env, sensor_asset, start_pose, "sensor",i, 0, 1)
+            sensor_handle = self.gym.create_actor(env, sensor_asset, start_pose, "sensor", i, 0, 1)
+            self.sensor_handles.append(sensor_handle)
             
-            scene_start_pose_obj = gymapi.Transform()
-            self.scene_translation = np.array([8,8,0])
-            scene_start_pose_obj.p = gymapi.Vec3(*self.scene_translation)
-            scene_handle = self.gym.create_actor(env, scene_asset, scene_start_pose_obj, 'obstacle', i, 0, 1)
-            
-            
-            
-            
-            self.sensor_handles.append(sensor_hanle)
+            # Create dynamic obstacles
+            if self.enable_dynamic_obstacles:
+                for _obj in range(self.num_obstacles):
+                    obstacle_pose = gymapi.Transform()
+                    # Place obstacles at different positions
+                    offset_x = 2.0 + _obj * 3.0
+                    offset_y = (_obj % 2) * 2.0 - 1.0  # Alternate between -1 and 1
+                    pos_obj = self.env_origins[i].clone()
+                    pos_obj[0] += offset_x
+                    pos_obj[1] += offset_y
+                    pos_obj[2] = 0.5  # Half height of pillar
+                    
+                    obstacle_pose.p = gymapi.Vec3(*pos_obj)
+                    obstacle_pose.r = gymapi.Quat(0, 0, 0, 1)
+                    
+                    obstacle_handle = self.gym.create_actor(
+                        env, obstacle_asset, obstacle_pose, 'obstacle', i, 0, 1
+                    )
+                    self.object_handles.append(obstacle_handle)
+                    
+                    # Store mesh path and transformation for warp
+                    self.obstacle_meshes_list.append(
+                        "/home/zifanw/rl_robot/OmniPerception/resources/terrain/plane/pillar_08x08x3.stl"
+                    )
+                    self.obstacle_transformations_list.append(pos_obj)
 
                           
     def create_obstacles(self):
@@ -940,6 +1014,72 @@ class Go2Env:
             z = heights[j]
             sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)
+    def update_warp_mesh(self):
+        """Update warp mesh vertices for dynamic obstacles"""
+        if not self.enable_dynamic_obstacles:
+            return
+            
+        # Get current obstacle positions
+        self.obstacle_root_states = self.vec_root_tensor[:, 1:self.num_obstacles+1, :]
+        self.obstacle_states_order = self.obstacle_root_states.clone().reshape(
+            self.num_envs * self.num_obstacles, -1
+        )
+        
+        # Get new transformations [total_obstacles, 3]
+        new_transforms = self.obstacle_states_order[:, :3]
+        expanded_current_tensor = new_transforms.repeat_interleave(self.single_num_vertices, dim=0)
+        
+        # Update warp mesh points
+        old_points = wp.to_torch(self.wp_meshes.points)
+        trans = expanded_current_tensor - self.expanded_init_translation
+        old_points[-self.all_obstacle_num_vertices:, :3] = (
+            self.init_points[-self.all_obstacle_num_vertices:, :3] + trans[:, :3]
+        )
+        
+        # Update mesh and refit
+        self.wp_meshes.points = wp.from_torch(old_points, dtype=wp.vec3)
+        self.wp_meshes.refit()
+    
+    def _move_obstacles(self):
+        """Move obstacles in a sinusoidal fashion using sin and cos"""
+        if not self.enable_dynamic_obstacles:
+            return
+            
+        self.obstacle_move_t += self.dt
+        
+        # Create sinusoidal movement with different frequencies for each axis
+        pos_param = torch.full(
+            (self.total_obstacles_num, 3), 
+            self.obstacle_move_t * self.obstacle_k, 
+            device=self.device
+        )
+        pos_param += self.random_obstacles_offsets
+        
+        # Apply movement using both sin and cos for circular/elliptical patterns
+        # X-axis: Use sine function (phase shifted from Y)
+        diff_x = torch.sin(pos_param[:, 0]).view(-1, 1) * 1  # ±0.3m in X
+        
+        # Y-axis: Use cosine function (90 degrees phase shift from X)
+        diff_y = torch.cos(pos_param[:, 1]).view(-1, 1) * 1  # ±0.5m in Y
+        
+        # Z-axis: Gentle vertical oscillation using sin with slower frequency
+        diff_z = torch.sin(pos_param[:, 2] * 0.5).view(-1, 1) * 0.2  # ±0.2m in Z
+        
+        # Update positions with sinusoidal movement
+        self.obstacle_states_order[:, 0:1] = self.init_obstacle_root_states[:, 0:1] + diff_x
+        self.obstacle_states_order[:, 1:2] = self.init_obstacle_root_states[:, 1:2] + diff_y
+        self.obstacle_states_order[:, 2:3] = self.init_obstacle_root_states[:, 2:3] + diff_z
+        
+        # Reshape and update
+        offset = self.obstacle_states_order.reshape(self.num_envs, self.num_obstacles, 13)
+        self.obstacle_root_states[:, :, :] = offset[:, :, :]
+        
+        # Set actor root state tensor
+        self.gym.set_actor_root_state_tensor(
+            self.sim, 
+            gymtorch.unwrap_tensor(self.vec_root_tensor)
+        )
+
     def keyboard_input(self):
         """Process keyboard input to move the robot"""
         # 在没有查看器的情况下直接返回，因为无法获取键盘输入
@@ -1101,7 +1241,11 @@ class Go2Env:
 
         self.measured_heights = self._get_heights()
 
-        
+        # Move dynamic obstacles if enabled
+        if self.enable_dynamic_obstacles:
+            self._move_obstacles()
+            # Update warp mesh to reflect new obstacle positions
+            self.update_warp_mesh()
         
         # Update sensor position/orientation
         # sensor_translation = torch.tensor([0.28945, 0.0, -0.046825], device=self.device)
@@ -1115,7 +1259,7 @@ class Go2Env:
         
 
         self.lidar_tensor, self.sensor_dist_tensor = self.sensor.update()
-        self.downsampled_cloud = farthest_point_sampling(self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3), sample_size=2000)
+        self.downsampled_cloud = farthest_point_sampling(self.lidar_tensor.view(self.num_envs,1,self.lidar_tensor.shape[2],3), sample_size=5000)
         
         
         # Step the physics
@@ -1273,16 +1417,19 @@ def print_lidar_pos():
     timer.start()
     
 if __name__ == "__main__":
-    # Create and run a simple lidar environment
+    # Create and run a simple lidar environment with dynamic obstacles
     env = Go2Env(
         num_envs=1,
-        num_obstacles=10
+        num_obstacles=2,  # Two dynamic pillar obstacles
+        enable_dynamic_obstacles=True  # Enable dynamic obstacle support
     )
     
     
-    print("LidarSensorEnv created!")
+    print("LidarSensorEnv created with dynamic obstacles!")
+    print("Dynamic pillars will move in sinusoidal patterns")
     print("Use WASD keys to move the lidar sensor horizontally")
     print("Use Q/E keys to move the lidar sensor up/down")
+    print("The lidar sensor will detect and track the moving obstacles")
 
     # Run simulation loop
     try:
