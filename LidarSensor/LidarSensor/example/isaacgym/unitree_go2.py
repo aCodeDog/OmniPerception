@@ -19,7 +19,10 @@ from LidarSensor.example.isaacgym.utils.terrain.terrain_cfg import Terrain_cfg
 from LidarSensor import SENSOR_ROOT_DIR,RESOURCES_DIR
 import os
 
+# Get repository root (4 levels up from this file)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
+print(f"REPO_ROOT: {REPO_ROOT}")
 KEY_W = gymapi.KEY_W
 KEY_A = gymapi.KEY_A
 KEY_S = gymapi.KEY_S
@@ -688,7 +691,7 @@ class Go2Env:
 
         # Load dynamic obstacle assets if enabled
         if self.enable_dynamic_obstacles:
-            obstacle_asset_root = "/home/zifanw/rl_robot/OmniPerception"
+            obstacle_asset_root = REPO_ROOT
             obstacle_asset_file = "resources/terrain/plane/pillar.urdf"
             obstacle_mesh_file = "resources/terrain/plane/pillar_08x08x3.stl"
             
@@ -755,7 +758,7 @@ class Go2Env:
                     
                     # Store mesh path and transformation for warp
                     self.obstacle_meshes_list.append(
-                        "/home/zifanw/rl_robot/OmniPerception/resources/terrain/plane/pillar_08x08x3.stl"
+                        os.path.join(REPO_ROOT, "resources/terrain/plane/pillar_08x08x3.stl")
                     )
                     self.obstacle_transformations_list.append(pos_obj)
 
