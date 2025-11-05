@@ -122,7 +122,7 @@
 ### **Prerequisites**
 - Python 3.8+
 - CUDA 11.0+ (for GPU acceleration)
-- One of: IsaacGym, Genesis, Mujoco, or Isaac Sim
+- One of: IsaacGym, Genesis, Mujoco, or Isaac Sim (<= 4.5). Note: Isaac Sim 5.0 don't spported.
 
 ### **Quick Install**
 ```bash
