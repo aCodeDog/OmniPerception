@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<!-- =================================================================================== -->
+<!-- |    This document is a simplified version of el_mini.urdf with only the base     | -->
+<!-- =================================================================================== -->
+<robot name="elspider_air_base">
+  <!-- root link can not have interia, so add this link and joint -->
+  <link name="base">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="floating_base" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="base"/>
+    <child link="trunk"/>
+  </joint>
+  <link name="trunk">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.00000732 0.00000000 0.02428745"/>
+      <mass value="15.8991"/>
+      <inertia ixx="0.0926086" ixy="-1.892e-05" ixz="1.58e-06" iyy="0.47054913" iyz="0.0" izz="0.53896766"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/BASE.STL"/>
+      </geometry>
+      <material name="default_material">
+        <color rgba="0.4 0.4 0.4 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/BASE.STL"/>
+      </geometry>
+    </collision>
+  </link>
+</robot> 
